@@ -3,6 +3,7 @@
 #   Fall 2018
 import numpy as np
 import model as relnet
+import sys,os
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -43,7 +44,7 @@ if __name__ == "__main__":
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
     # Set the below to whatever your machine uses
-    DEV_DIR = "/home/adam/RelNet/src/baseline/DevData/"
+    DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
     print("Loading dev data...")
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
