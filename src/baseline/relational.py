@@ -40,18 +40,20 @@ def loadDevData(rootDirectory, labels=False):
 
 
 if __name__ == "__main__":
-    
+    print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
+
     # Set the below to whatever your machine uses
     DEV_DIR = "/home/adam/RelNet/src/baseline/DevData/"
+    print("Loading dev data...")
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
     # This is just a peace of mind check
-    print(trainXDev.shape)      # (5000, 1227)
-    print(valXDev.shape)        # (600, 1227)
-    print(testXDev.shape)       # (600, 1227)
-    print(trainYDev.shape)      # (5000, ) -> Just a vector
-    print(valYDev.shape)        # (600, )
-    print(testYDev.shape)       # (600, )
+    print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
+    print("\tValX Size \t= ", valXDev.shape)          # (600, 1227)
+    print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227)
+    print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
+    print("\tValY Size \t= ", valYDev.shape)          # (600, )
+    print("\tTestY Size \t= ", testYDev.shape)        # (600, )
 
     # ======== Relational Network Goes Below ============
