@@ -2,6 +2,7 @@
 #   Script to load in embeddings, construct a (smaller!) dev set, and integrate a Relational Network
 #   Fall 2018
 import numpy as np
+import model as relnet
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -39,14 +40,18 @@ def loadDevData(rootDirectory, labels=False):
 
 
 if __name__ == "__main__":
+    
     # Set the below to whatever your machine uses
     DEV_DIR = "/home/adam/RelNet/src/baseline/DevData/"
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
-    print(trainXDev.shape)
-    print(valXDev.shape)
-    print(testXDev.shape)
-    print(trainYDev.shape)
-    print(valYDev.shape)
-    print(testYDev.shape)
+    # This is just a peace of mind check
+    print(trainXDev.shape)      # (5000, 1227)
+    print(valXDev.shape)        # (600, 1227)
+    print(testXDev.shape)       # (600, 1227)
+    print(trainYDev.shape)      # (5000, ) -> Just a vector
+    print(valYDev.shape)        # (600, )
+    print(testYDev.shape)       # (600, )
+
+    # ======== Relational Network Goes Below ============
