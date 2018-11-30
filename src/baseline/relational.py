@@ -203,48 +203,40 @@ def main():
     else:
         model = RN(args)
 
+    bs = args.batch_size
+
     # WARNING: The code below has not yet been modified to work with the Reddit embeddings.
     # The return statement prevents execution of the lines below.
     print("Training complete!")
     return
 
+    # ===========================================================
+    #    EDIT THE CODE BELOW TO WORK WITH REDDIT EMBEDDINGS!
+    # ===========================================================
+    # input_img = torch.FloatTensor(bs, 3, 75, 75)
+    # input_qst = torch.FloatTensor(bs, 11)
+    # label = torch.LongTensor(bs)
+
+    # if args.cuda:
+    #     model.cuda()
+    #     input_img = input_img.cuda()
+    #     input_qst = input_qst.cuda()
+    #     label = label.cuda()
+
+    # input_img = Variable(input_img)
+    # input_qst = Variable(input_qst)
+    # label = Variable(label)
+
+    # rel_train, rel_test, norel_train, norel_test = load_data()
+
+    # for epoch in range(1, args.epochs + 1):
+    #     train(epoch, rel_train, norel_train)
+    #     test(epoch, rel_test, norel_test)
+    #     model.save_model(epoch)
+
 
    
-    model_dirs = './model'
-    bs = args.batch_size
-    input_img = torch.FloatTensor(bs, 3, 75, 75)
-    input_qst = torch.FloatTensor(bs, 11)
-    label = torch.LongTensor(bs)
 
-    if args.cuda:
-        model.cuda()
-        input_img = input_img.cuda()
-        input_qst = input_qst.cuda()
-        label = label.cuda()
-
-    input_img = Variable(input_img)
-    input_qst = Variable(input_qst)
-    label = Variable(label)
-
-    rel_train, rel_test, norel_train, norel_test = load_data()
-
-    try:
-        os.makedirs(model_dirs)
-    except:
-        print('directory {} already exists'.format(model_dirs))
-
-    if args.resume:
-        filename = os.path.join(model_dirs, args.resume)
-        if os.path.isfile(filename):
-            print('==> loading checkpoint {}'.format(filename))
-            checkpoint = torch.load(filename)
-            model.load_state_dict(checkpoint)
-            print('==> loaded checkpoint {}'.format(filename))
-
-    for epoch in range(1, args.epochs + 1):
-        train(epoch, rel_train, norel_train)
-        test(epoch, rel_test, norel_test)
-        model.save_model(epoch)
 
 
 if __name__ == "__main__":
