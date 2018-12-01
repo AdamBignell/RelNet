@@ -80,14 +80,29 @@ class BasicModel(nn.Module):
         torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
 
 
+"""Default args
+Model:          RN
+Batch-size:     64
+Epochs:         20
+Learning rate:  0.0001
+No-cuda:        False
+Seed:           1
+Log-interval:   10
+"""
 class RN(BasicModel):
     def __init__(self, args):
         super(RN, self).__init__(args, 'RN')
         
         self.conv = ConvInputModel()
+
+        """nn.Linear(in_features, out_features, bias=True)
+        in_features – size of each input sample
+        out_features – size of each output sample
+        bias – If set to False, the layer will not learn an additive bias. Default: True
+        """
         
         ##(number of filters per object+coordinate of object)*2+question vector
-        self.g_fc1 = nn.Linear((24+2)*2+11, 256)
+        self.g_fc1 = nn.Linear((24+2)*2+11, 256) # fc: fully connected, (24+2)*2+11 = 63
 
         self.g_fc2 = nn.Linear(256, 256)
         self.g_fc3 = nn.Linear(256, 256)
@@ -95,11 +110,16 @@ class RN(BasicModel):
 
         self.f_fc1 = nn.Linear(256, 256)
 
-        self.coord_oi = torch.FloatTensor(args.batch_size, 2)
+        self.coord_oi = torch.FloatTensor(args.batch_size, 2) # Batch-size:     64
         self.coord_oj = torch.FloatTensor(args.batch_size, 2)
         if args.cuda:
             self.coord_oi = self.coord_oi.cuda()
             self.coord_oj = self.coord_oj.cuda()
+        """ from torch.Autograd 
+        The Variable API has been deprecated: Variables are no longer necessary to use autograd with tensors. Autograd automatically supports Tensors with requires_grad set to True. 
+        Below please find a quick guide on what has changed:
+            Variable(tensor) and Variable(tensor, requires_grad) still work as expected, but they return Tensors instead of Variables.
+        """
         self.coord_oi = Variable(self.coord_oi)
         self.coord_oj = Variable(self.coord_oj)
 
@@ -107,7 +127,7 @@ class RN(BasicModel):
         def cvt_coord(i):
             return [(i/5-2)/2., (i%5-2)/2.]
         
-        self.coord_tensor = torch.FloatTensor(args.batch_size, 25, 2)
+        self.coord_tensor = torch.FloatTensor(args.batch_size, 25, 2) # Batch-size:     64
         if args.cuda:
             self.coord_tensor = self.coord_tensor.cuda()
         self.coord_tensor = Variable(self.coord_tensor)
@@ -135,10 +155,10 @@ class RN(BasicModel):
         # add coordinates
         x_flat = torch.cat([x_flat, self.coord_tensor],2)
         
-        # add question everywhere
-        qst = torch.unsqueeze(qst, 1)
-        qst = qst.repeat(1,25,1)
-        qst = torch.unsqueeze(qst, 2)
+        # # add question everywhere
+        # qst = torch.unsqueeze(qst, 1)
+        # qst = qst.repeat(1,25,1)
+        # qst = torch.unsqueeze(qst, 2)
         
         # cast all pairs against each other
         x_i = torch.unsqueeze(x_flat,1) # (64x1x25x26+11)

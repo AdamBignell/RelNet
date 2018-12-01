@@ -49,6 +49,12 @@ if __name__ == "__main__":
     print("Loading dev data...")
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
+    trainXDev = trainXDev[:,263:]
+    trainYDev = trainYDev[:,263:]
+    valXDev = valXDev[:,263:]
+    valYDev = valYDev[:,263:]
+    testXDev = testXDev[:,263:]
+    testYDev = testYDev[:,263:]
 
     # This is just a peace of mind check
     print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
