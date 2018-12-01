@@ -108,6 +108,8 @@ def main():
     print("Loading dev data...")
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
+
+    # Remove the hand crafted features
     trainXDev = trainXDev[:,263:]
     trainYDev = trainYDev[:,263:]
     valXDev = valXDev[:,263:]
