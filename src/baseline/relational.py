@@ -14,8 +14,6 @@ from torch.autograd import Variable
 from model import RN, CNN_MLP
 
 
-
-
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
     which = "X"
@@ -79,7 +77,7 @@ def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
 
     for batch_idx in range(len(rel[0]) // bs):
         input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
-        accuracy_rel = model.train_(input_tensor, output_tensor)
+        accuracy_rel = model.naive_train_(input_tensor, output_tensor)
 
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, len(rel[0]) * 2, \
@@ -171,11 +169,6 @@ def main():
 
     bs = args.batch_size
 
-    # ===========================================================
-    #    EDIT THE CODE BELOW TO WORK WITH REDDIT EMBEDDINGS!
-    # ===========================================================
-
-    # CHANGE THIS TO 1227 when doing the full analysis
     TOTAL_FEATURES = 1227
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
 
