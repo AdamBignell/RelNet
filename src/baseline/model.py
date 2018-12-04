@@ -41,9 +41,11 @@ class FCOutputModel(nn.Module):
         super(FCOutputModel, self).__init__()
 
         self.fc2 = nn.Linear(256, 256)
-        # Our label needs to match to 10 if we leave fc3 as is
-        # Changing it to 1 will not work
-        self.fc3 = nn.Linear(256, 10)
+
+        # Conflict = {True, False}
+        N_CLASSES = 2
+
+        self.fc3 = nn.Linear(256, N_CLASSES)
 
     def forward(self, x):
         x = self.fc2(x)
@@ -262,31 +264,45 @@ class RN(BasicModel):
         g_input[4, :, :] = second_post
         g_input[5, :, :] = third_post
 
+        # now g_input is mb * 6 * 128, by swapping the first two rows
+        g_input = g_input.permute(1, 0, 2)
 
+        # now reshape
+        g_input = g_input.contiguous().view(mb*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
 
         # Hold outputs of g
         # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
         # =======================================================
         # TODO : Change the code below to account for this!
 
-        g_output = torch.empty(
-            POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
+        x_ = g_input
+        x_ = self.g_fc1(x_)
+        x_ = F.relu(x_)
+        x_ = self.g_fc2(x_)
+        x_ = F.relu(x_)
+        x_ = self.g_fc3(x_)
+        x_ = F.relu(x_)
+        x_ = self.g_fc4(x_)
+        x_ = F.relu(x_)
+
+        g_output = x_.view(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS)
+        # g_output = torch.empty(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
         
         """g"""
-        for i in range(POSSIBLE_PAIRINGS):
-            x_ = self.g_fc1(g_input[i,:])
-            x_ = F.relu(x_)
-            x_ = self.g_fc2(x_)
-            x_ = F.relu(x_)
-            x_ = self.g_fc3(x_)
-            x_ = F.relu(x_)
-            x_ = self.g_fc4(x_)
-            x_ = F.relu(x_)
-            g_output[i,:] = x_
+        # for i in range(POSSIBLE_PAIRINGS):
+        #     x_ = self.g_fc1(g_input[i,:])
+        #     x_ = F.relu(x_)
+        #     x_ = self.g_fc2(x_)
+        #     x_ = F.relu(x_)
+        #     x_ = self.g_fc3(x_)
+        #     x_ = F.relu(x_)
+        #     x_ = self.g_fc4(x_)
+        #     x_ = F.relu(x_)
+        #     g_output[i,:] = x_
         
         # Sum output pairings elementwise
-
-        f_input = g_output.sum(0)
+        # f_input has size: mb x 256 (since we sum along the possible pairings
+        f_input = g_output.sum(1).squeeze()
 
         """f"""
         x_f = self.f_fc1(f_input)
