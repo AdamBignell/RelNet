@@ -77,23 +77,23 @@ def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
         accuracy = model.naive_train_(input_tensor, output_tensor, bs)
 
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, N * 2, \
+            print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, N * 2, \
                                                                                                                            100. * batch_idx * bs/ N, accuracy))
             
 
-def test(epoch, rel, model, input_tensor, output_tensor, bs, args):
+def test(epoch, train_data, model, input_tensor, output_tensor, bs, args):
     model.eval()
 
-    rel = cvt_data_axis(rel)
+    train_data = cvt_data_axis(train_data)
+    N = len(train_data[0])
 
-    accuracy_rels = []
-    for batch_idx in range(len(rel[0]) // bs):
-        tensor_data(rel, batch_idx, bs)
-        accuracy_rels.append(model.test_(input_tensor, output_tensor))
+    accuracy = []
+    for batch_idx in range(N // bs):
+        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs)
+        accuracy.append(model.test_(input_tensor, output_tensor))
 
-    accuracy_rel = sum(accuracy_rels) / len(accuracy_rels)
-    print('\n Test set: Relation accuracy: {:.0f}% | Non-relation accuracy: {:.0f}%\n'.format(
-        accuracy_rel))
+    accuracy = sum(accuracy) / len(accuracy)
+    print('\n Test set: Conflict Accuracy: {:.0f}%\n'.format(accuracy))
 
 
 
@@ -198,8 +198,8 @@ def main():
     for epoch in range(1, args.epochs + 1):
         # train_data =
         train(epoch, train_data, model, input_tensor, output_tensor, bs, args)
-        #test(epoch, test_data, model, input_tensor, output_tensor, bs, args)
-        model.save_model(epoch)
+        test(epoch, test_data, model, input_tensor, output_tensor, bs, args)
+        # model.save_model(epoch)
 
     print("Training complete!")
 

@@ -98,7 +98,7 @@ class BasicModel(nn.Module):
         return accuracy
 
     def test_(self, input_feats, label):
-        output = self(input_feats)
+        output = self.naive_forward(input_feats)
         pred = output.data.max(1)[1]
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
