@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
+import random
 
 
 class ConvInputModel(nn.Module):
@@ -43,14 +44,14 @@ class FCOutputModel(nn.Module):
         self.fc2 = nn.Linear(256, 256)
         # Our label needs to match to 10 if we leave fc3 as is
         # Changing it to 1 will not work
-        self.fc3 = nn.Linear(256, 10)
+        self.fc3 = nn.Linear(256, 2)
 
     def forward(self, x):
         x = self.fc2(x)
         x = F.relu(x)
         x = F.dropout(x)
         x = self.fc3(x)
-        return F.log_softmax(x)
+        return F.log_softmax(x, dim=-1)
 
 
 class BasicModel(nn.Module):
@@ -69,21 +70,32 @@ class BasicModel(nn.Module):
         accuracy = correct * 100. / len(label)
         return accuracy
 
-    def naive_train_(self, input_feats, label):
+    def naive_guess(self, batch_size, input_feats):
+        """Stubbed for subclass to implement"""
+        probs = torch.empty(0, 0)
+        for i in range(batch_size):
+            guess = torch.empty(1, 2)
+            probconflict = random.uniform(0, 1)
+            probsafe = 1-probconflict
+            guess[0, 0] = probsafe
+            guess[0, 1] = probconflict
+            probs = torch.cat((probs, guess), 0)
+        return probs
+
+    def naive_train_(self, input_feats, label, batch_size):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
         output = self.naive_forward(input_feats)
+        #print(output)
+        #print(label)
         loss = F.nll_loss(output, label)
-        loss.backward()
+        with torch.enable_grad():
+            loss.backward()
         self.optimizer.step()
         pred = output.data.max(1)[1]
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
         return accuracy
-
-    def naive_forward(self, input_feats):
-        """Stubbed for subclass to implement"""
-        return torch.empty(input_feats)
 
     def test_(self, input_feats, label):
         output = self(input_feats)
@@ -241,34 +253,43 @@ class RN(BasicModel):
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
             input_feats)
 
+        batch_size = input_feats.shape[0]
         POSSIBLE_PAIRINGS = 6
         
         # Define object-pairs
-        first_second = torch.cat([first_embedding, second_embedding])
-        first_third = torch.cat([first_embedding, third_embedding])
-        first_post = torch.cat([first_embedding, post_embedding])
-        second_third = torch.cat([second_embedding, third_embedding])
-        second_post = torch.cat([second_embedding, post_embedding])
-        third_post = torch.cat([third_embedding, post_embedding])
+        first_second = torch.cat([first_embedding, second_embedding], 1)
+        first_third = torch.cat([first_embedding, third_embedding], 1)
+        first_fourth = torch.cat([first_embedding, post_embedding], 1)
+        second_third = torch.cat([second_embedding, third_embedding], 1)
+        second_fourth = torch.cat([second_embedding, post_embedding], 1)
+        third_fourth = torch.cat([third_embedding, post_embedding], 1)
 
         # Hold inputs to g
-        g_input = torch.empty(POSSIBLE_PAIRINGS, 2 *
+        g_input = torch.empty(POSSIBLE_PAIRINGS * batch_size, 2 *
                               OBJ_LENGTH, dtype=torch.float)
 
-        g_input[0,:] = first_second
-        g_input[1,:] = first_third
-        g_input[2,:] = first_post
-        g_input[3,:] = second_third
-        g_input[4,:] = second_post
-        g_input[5,:] = third_post
+        #g_inputs = []
+        #g_inputs.extend([first_second, first_third, first_fourth, second_third, second_fourth, third_fourth])
+
+        batch_indices = []
+        for i in range(batch_size+1):
+            batch_indices.append(i * batch_size)
+        
+
+        g_input[batch_indices[0]:batch_indices[1],:] = first_second
+        g_input[batch_indices[1]:batch_indices[2],:] = first_third
+        g_input[batch_indices[2]:batch_indices[3],:] = first_fourth
+        g_input[batch_indices[3]:batch_indices[4],:] = second_third
+        g_input[batch_indices[4]:batch_indices[5],:] = second_fourth
+        g_input[batch_indices[5]:batch_indices[6],:] = third_fourth
 
         # Hold outputs of g
-        g_output = torch.empty(
-            POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
+        g_output = torch.zeros(
+            batch_size, HIDDEN_LAYER_UNITS, dtype=torch.float)
         
         """g"""
         for i in range(POSSIBLE_PAIRINGS):
-            x_ = self.g_fc1(g_input[i,:])
+            x_ = self.g_fc1(g_input[batch_indices[0]:batch_indices[1],:].float())
             x_ = F.relu(x_)
             x_ = self.g_fc2(x_)
             x_ = F.relu(x_)
@@ -276,10 +297,11 @@ class RN(BasicModel):
             x_ = F.relu(x_)
             x_ = self.g_fc4(x_)
             x_ = F.relu(x_)
-            g_output[i,:] = x_
+            g_output = g_output + x_ # Sum output pairings elementwise
         
-        # Sum output pairings elementwise
-        f_input = g_output.sum(0)
+        
+        f_input = g_output
+        #print(f_input.shape)
 
         """f"""
         x_f = self.f_fc1(f_input)
@@ -295,20 +317,21 @@ class RN(BasicModel):
 
         INPUT_FEAT_LENGTH = 1227
         HANDCRAFTED_FEATURES = 263
-
-        input_feats = input_feats[:, HANDCRAFTED_FEATURES:].view(
+        numExamples = input_feats.shape[0]
+        input_feats = input_feats[:, HANDCRAFTED_FEATURES:].view(numExamples,
             INPUT_FEAT_LENGTH - HANDCRAFTED_FEATURES)  # remove features and flatten
         
-        first_embedding = input_feats[:300]
-        second_embedding = input_feats[300:600]
-        third_embedding = input_feats[600:900]
-        post_embedding = input_feats[900:]
+        #print(input_feats.shape)
+        first_embedding = input_feats[:,:300]
+        second_embedding = input_feats[:,300:600]
+        third_embedding = input_feats[:,600:900]
+        post_embedding = input_feats[:,900:]
 
         # For now, just take the first 64
-        first_embedding = first_embedding[:OBJ_LENGTH]
-        second_embedding = second_embedding[:OBJ_LENGTH]
-        third_embedding = third_embedding[:OBJ_LENGTH]
-        post_embedding = post_embedding[:OBJ_LENGTH]
+        first_embedding = first_embedding[:, :OBJ_LENGTH]
+        second_embedding = second_embedding[:, :OBJ_LENGTH]
+        third_embedding = third_embedding[:, :OBJ_LENGTH]
+        post_embedding = post_embedding[:, :OBJ_LENGTH]
 
         return first_embedding, second_embedding, third_embedding, post_embedding
 

@@ -52,9 +52,9 @@ def loadDevData(rootDirectory, labels=False):
 def tensor_data(data, i, bs):
     input_data = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
     output_data = torch.from_numpy(np.asarray(data[1][bs*i:bs*(i+1)]))
-
     input_data.data.resize_(input_data.size()).copy_(input_data)
     output_data.data.resize_(output_data.size()).copy_(output_data)
+    return input_data, output_data
 
 
 def cvt_data_axis(data):
@@ -63,20 +63,22 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
     
-def train(epoch, rel, model, input_tensor, output_tensor, bs, args):
+def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
     model.train()
 
-    random.shuffle(rel)
-    rel = cvt_data_axis(rel)
+    random.shuffle(train_data)
+    train_data = cvt_data_axis(train_data)
+    N = len(train_data[0])
 
-    for batch_idx in range(len(rel[0]) // bs):
-        tensor_data(rel, batch_idx, bs)
+    for batch_idx in range(N // bs):
+        # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
+        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs)
         # accuracy_rel = model.train_(input_tensor, output_tensor)
-        accuracy_rel = model.naive_train_(input_tensor, output_tensor)
+        accuracy = model.naive_train_(input_tensor, output_tensor, bs)
 
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, len(rel[0]) * 2, \
-                                                                                                                           100. * batch_idx * bs/ len(rel[0]), accuracy_rel))
+            print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, N * 2, \
+                                                                                                                           100. * batch_idx * bs/ N, accuracy))
             
 
 def test(epoch, rel, model, input_tensor, output_tensor, bs, args):
@@ -105,25 +107,22 @@ def main():
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
-    # Remove the hand crafted features
-    trainXDev = trainXDev[:,263:]
-    trainYDev = trainYDev[:,263:]
-    valXDev = valXDev[:,263:]
-    valYDev = valYDev[:,263:]
-    testXDev = testXDev[:,263:]
-    testYDev = testYDev[:,263:]
+    # THIS CONFLICTS WITH EMBEDDING EXTRACTION
+    # trainXDev = trainXDev[:,263:]
+    # valXDev = valXDev[:,263:]
+    # testXDev = testXDev[:,263:]
 
     # This is just a peace of mind check
-    print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
-    print("\tValX Size \t= ", valXDev.shape)          # (600, 1227)
-    print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227)
+    print("\tTrainX Size \t= ", trainXDev.shape)      # w/ all: (5000, 1227) w/o handcrafted: (5000, 964) 
+    print("\tValX Size \t= ", valXDev.shape)          # (600, 1227) w/o handcrafted: (5000, 964) 
+    print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227) w/o handcrafted: (5000, 964) 
     print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
     print("\tValY Size \t= ", valYDev.shape)          # (600, )
     print("\tTestY Size \t= ", testYDev.shape)        # (600, )
 
     # ======== Relational Network Goes Below ============
 
-    DEFAULT_BS = 1 # change to 64
+    DEFAULT_BS = 10 # change to 64
 
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
@@ -164,7 +163,6 @@ def main():
 
     # WARNING: The code below has not yet been modified to work with the Reddit embeddings.
     # The return statement prevents execution of the lines below.
-    print("Training complete!")
 
     # ===========================================================
     #    EDIT THE CODE BELOW TO WORK WITH REDDIT EMBEDDINGS!
@@ -172,7 +170,6 @@ def main():
 
     # CHANGE THIS TO 1227 when doing the full analysis
     NUM_FEATURES = 1227
-
     input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
     output_tensor = torch.LongTensor(bs)
 
@@ -201,9 +198,10 @@ def main():
     for epoch in range(1, args.epochs + 1):
         # train_data =
         train(epoch, train_data, model, input_tensor, output_tensor, bs, args)
-        test(epoch, test_data, model, input_tensor, output_tensor, bs, args)
+        #test(epoch, test_data, model, input_tensor, output_tensor, bs, args)
         model.save_model(epoch)
 
+    print("Training complete!")
 
     return
 
