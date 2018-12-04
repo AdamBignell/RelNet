@@ -292,18 +292,23 @@ class RN(BasicModel):
 
     def extract_embeddings(self, input_feats):
         """Extract embeddings from 1227 long input vector"""
-        print("Size input_feats: " + str(input_feats.size()))
-        input_feats = input_feats[:, 263:].view(1227-263) # remove features and flatten
+
+        INPUT_FEAT_LENGTH = 1227
+        HANDCRAFTED_FEATURES = 263
+
+        input_feats = input_feats[:, HANDCRAFTED_FEATURES:].view(
+            INPUT_FEAT_LENGTH - HANDCRAFTED_FEATURES)  # remove features and flatten
+        
         first_embedding = input_feats[:300]
         second_embedding = input_feats[300:600]
         third_embedding = input_feats[600:900]
         post_embedding = input_feats[900:]
 
         # For now, just take the first 64
-        first_embedding = first_embedding[:64]
-        second_embedding = second_embedding[:64]
-        third_embedding = third_embedding[:64]
-        post_embedding = post_embedding[:64]
+        first_embedding = first_embedding[:OBJ_LENGTH]
+        second_embedding = second_embedding[:OBJ_LENGTH]
+        third_embedding = third_embedding[:OBJ_LENGTH]
+        post_embedding = post_embedding[:OBJ_LENGTH]
 
         return first_embedding, second_embedding, third_embedding, post_embedding
 
