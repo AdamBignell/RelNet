@@ -58,6 +58,8 @@ def tensor_data(data, i, bs):
     input_data.data.resize_(input_data.size()).copy_(input_data)
     output_data.data.resize_(output_data.size()).copy_(output_data)
 
+    return input_data, output_data
+
 
 def cvt_data_axis(data):
     input_data = [e[0] for e in data]
@@ -65,14 +67,18 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
     
-def train(epoch, rel, model, input_tensor, output_tensor, bs, args):
+def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
     model.train()
 
-    random.shuffle(rel)
-    rel = cvt_data_axis(rel)
+    # Uncomment this later to shuffle
+    # random.shuffle(train_data)
+
+    # rel[0]: input
+    # rel[1]: output
+    rel = cvt_data_axis(train_data)
 
     for batch_idx in range(len(rel[0]) // bs):
-        tensor_data(rel, batch_idx, bs)
+        input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
         accuracy_rel = model.train_(input_tensor, output_tensor)
 
         if batch_idx % args.log_interval == 0:
@@ -126,7 +132,7 @@ def main():
 
     # ======== Relational Network Goes Below ============
 
-    DEFAULT_BS = 1 # change to 64
+    DEFAULT_BS = 4 # change to 64
 
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
@@ -186,14 +192,12 @@ def main():
 
     train_data = []
     for i, tr in enumerate(trainXDev):
-        tr = tr[:NUM_FEATURES]
         tup = (tr, trainYDev[i])
         train_data.append(tup)
     train_data = np.array(train_data)
 
     test_data = []
     for i, te in enumerate(testXDev):
-        te = te[:NUM_FEATURES]
         tup = (te, testYDev[i])
         test_data.append(tup)
     test_data = np.array(test_data)

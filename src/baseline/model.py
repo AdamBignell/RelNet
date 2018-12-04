@@ -157,12 +157,34 @@ class RN(BasicModel):
 
         # THESE NUMBERS ARE MADE UP!
 
-        NUM_USER_FEATS = 200
-        NUM_SOURCE_FEATS = 200
-        NUM_TARGET_FEATS = 200
-        NUM_POST_FEATS = 364
+        USER_FEATS_START = 0
+        USER_FEATS_END = 200
+        SOURCE_FEATS_END = USER_FEATS_END + 200
+        TARGET_FEATS_END = SOURCE_FEATS_END + 200
+        # POST_FEATS_END = TARGET_FEATS_END + 364
 
         REDUCED_DIMS = 64
+
+        xUser = x[:, :USER_FEATS_END]
+        xSource = x[:, USER_FEATS_END : SOURCE_FEATS_END]
+        xTarget = x[:, SOURCE_FEATS_END : TARGET_FEATS_END]
+        xPost = x[:, TARGET_FEATS_END:]
+
+        X = xUser
+        k = REDUCED_DIMS
+
+        # X_mean = torch.mean(X, 0)
+        # X = X - X_mean.expand_as(X)
+        # U, S, V = torch.svd(torch.t(X))
+        # C = torch.mm(X, U[:, :k])
+
+
+
+        x = torch.cat([xUser[:64], xSource[:64], xTarget[:64], xPost[:64]])
+
+
+
+
 
         # We need to convert x into a mb * (64+64+64+64) vector
 
