@@ -119,6 +119,8 @@ class RN(BasicModel):
 
         # Coordinates for objects i and j
         self.coord_oi = torch.FloatTensor(args.batch_size, 2) # Batch-size:     64
+        self.coord_oj = torch.FloatTensor(args.batch_size, 2) # Batch-size:     64
+
         if args.cuda:
             self.coord_oi = self.coord_oi.cuda()
             self.coord_oj = self.coord_oj.cuda()
@@ -153,17 +155,21 @@ class RN(BasicModel):
     def forward(self, input_feats):
         x = input_feats  #
 
-        # x = self.conv(input_feats)  ## x = (64 x 24 x 5 x 5)
+        # THESE NUMBERS ARE MADE UP!
+
+        NUM_USER_FEATS = 200
+        NUM_SOURCE_FEATS = 200
+        NUM_TARGET_FEATS = 200
+        NUM_POST_FEATS = 364
+
+        REDUCED_DIMS = 64
+
+        # We need to convert x into a mb * (64+64+64+64) vector
+
 
         """g"""
-        # =========================================================
-        #               TODO : Change the code below!!
-        # =========================================================
         # Minibatch size
         mb = x.size()[0]
-
-        # Number of channels (24 in their example)
-        # n_channels = x.size()[1]
 
         # Dimension of the image (does not apply to our code)
         d = x.size()[1]

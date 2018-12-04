@@ -106,13 +106,15 @@ def main():
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
+    NUM_HANDCRAFTED = 263
+
     # Remove the hand crafted features
-    trainXDev = trainXDev[:,263:]
-    trainYDev = trainYDev[:,263:]
-    valXDev = valXDev[:,263:]
-    valYDev = valYDev[:,263:]
-    testXDev = testXDev[:,263:]
-    testYDev = testYDev[:,263:]
+    trainXDev = trainXDev[:, NUM_HANDCRAFTED:]
+    trainYDev = trainYDev
+    valXDev = valXDev[:, NUM_HANDCRAFTED:]
+    valYDev = valYDev
+    testXDev = testXDev[:, NUM_HANDCRAFTED:]
+    testYDev = testYDev
 
     # This is just a peace of mind check
     print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
@@ -163,16 +165,13 @@ def main():
 
     bs = args.batch_size
 
-    # WARNING: The code below has not yet been modified to work with the Reddit embeddings.
-    # The return statement prevents execution of the lines below.
-    print("Training complete!")
-
     # ===========================================================
     #    EDIT THE CODE BELOW TO WORK WITH REDDIT EMBEDDINGS!
     # ===========================================================
 
     # CHANGE THIS TO 1227 when doing the full analysis
-    NUM_FEATURES = 25
+    TOTAL_FEATURES = 1227
+    NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
 
     input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
     output_tensor = torch.LongTensor(bs)
@@ -207,11 +206,6 @@ def main():
 
 
     return
-
-    # for epoch in range(1, args.epochs + 1):
-    #     train(epoch, rel_train)
-    #     test(epoch, rel_test)
-    #     model.save_model(epoch)
 
 
    
