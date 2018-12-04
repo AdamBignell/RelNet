@@ -96,6 +96,17 @@ class BasicModel(nn.Module):
         torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
 
 
+
+"""Default args
+Model:          RN
+Batch-size:     64
+Epochs:         20
+Learning rate:  0.0001
+No-cuda:        False
+Seed:           1
+Log-interval:   10
+"""
+
 NUM_FEATURES = 25
 OBJ_LENGTH = 64
 HIDDEN_LAYER_UNITS = 256
@@ -106,6 +117,12 @@ class RN(BasicModel):
 
         # Let's assume we aren't needing a convolutional model
         # self.conv = ConvInputModel()
+        
+        """nn.Linear(in_features, out_features, bias=True)
+        in_features – size of each input sample
+        out_features – size of each output sample
+        bias – If set to False, the layer will not learn an additive bias. Default: True
+        """
 
         # g_fc1 should take 2 * 64 long objects
         self.g_fc1 = nn.Linear(2 * OBJ_LENGTH, HIDDEN_LAYER_UNITS)
@@ -175,13 +192,6 @@ class RN(BasicModel):
         # (64, 25, 24) -> (64, 25, 26)
         x_flat = torch.cat([x_flat, self.coord_tensor], 2)
 
-        # add question everywhere
-        # I don't think we need this code, so I'm commenting it out.
-
-        # qst = torch.unsqueeze(qst, 1)
-        # qst = qst.repeat(1, 25, 1)
-        # qst = torch.unsqueeze(qst, 2)
-
         # x_flat is now: (64, 1227, 1+2)
 
         # cast all pairs against each other
@@ -194,10 +204,6 @@ class RN(BasicModel):
 
         # concatenate all together
         x_full = torch.cat([x_i, x_j], 3)  # (64x25x25x2*26+11)
-
-
-
-
 
         # reshape for passing through network
 
