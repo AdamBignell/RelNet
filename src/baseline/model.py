@@ -78,24 +78,29 @@ class BasicModel(nn.Module):
         torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
 
 
-NUM_FEATURES = 1227
+NUM_FEATURES = 25
 
 
 class RN(BasicModel):
     def __init__(self, args):
         super(RN, self).__init__(args, 'RN')
 
-        self.conv = ConvInputModel()
+        # Let's assume we aren't needing a convolutional model
+        # self.conv = ConvInputModel()
 
         ##(number of filters per object+coordinate of object)*2+question vector
-        self.g_fc1 = nn.Linear((24 + 2) * 2 + 11, 256)
+        # self.g_fc1 = nn.Linear((NUM_FEATURES + 2) * 2, 256)
 
-        self.g_fc2 = nn.Linear(256, 256)
-        self.g_fc3 = nn.Linear(256, 256)
-        self.g_fc4 = nn.Linear(256, 256)
 
-        self.f_fc1 = nn.Linear(256, 256)
+        HIDDEN_LAYER_UNITS = 256
+        self.g_fc1 = nn.Linear(6, HIDDEN_LAYER_UNITS)
+        self.g_fc2 = nn.Linear(HIDDEN_LAYER_UNITS, HIDDEN_LAYER_UNITS)
+        self.g_fc3 = nn.Linear(HIDDEN_LAYER_UNITS, HIDDEN_LAYER_UNITS)
+        self.g_fc4 = nn.Linear(HIDDEN_LAYER_UNITS, HIDDEN_LAYER_UNITS)
 
+        self.f_fc1 = nn.Linear(HIDDEN_LAYER_UNITS, HIDDEN_LAYER_UNITS)
+
+        # Coordinates for objects i and j
         self.coord_oi = torch.FloatTensor(args.batch_size, 2)
         self.coord_oj = torch.FloatTensor(args.batch_size, 2)
         if args.cuda:
@@ -108,12 +113,15 @@ class RN(BasicModel):
         def cvt_coord(i):
             return [(i / 5 - 2) / 2., (i % 5 - 2) / 2.]
 
-        self.coord_tensor = torch.FloatTensor(args.batch_size, 25, 2)
+        self.coord_tensor = torch.FloatTensor(args.batch_size, NUM_FEATURES, 2)
+
         if args.cuda:
             self.coord_tensor = self.coord_tensor.cuda()
         self.coord_tensor = Variable(self.coord_tensor)
-        np_coord_tensor = np.zeros((args.batch_size, 25, 2))
-        for i in range(25):
+
+        np_coord_tensor = np.zeros((args.batch_size, NUM_FEATURES, 2))
+
+        for i in range(NUM_FEATURES):
             np_coord_tensor[:, i, :] = np.array(cvt_coord(i))
         self.coord_tensor.data.copy_(torch.from_numpy(np_coord_tensor))
 
@@ -121,36 +129,67 @@ class RN(BasicModel):
 
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
 
-    def forward(self, img, qst):
-        x = self.conv(img)  ## x = (64 x 24 x 5 x 5)
+    def forward(self, input_feats):
+        x = input_feats  #
+
+        # x = self.conv(input_feats)  ## x = (64 x 24 x 5 x 5)
 
         """g"""
+        # =========================================================
+        #               TODO : Change the code below!!
+        # =========================================================
+        # Minibatch size
         mb = x.size()[0]
-        n_channels = x.size()[1]
-        d = x.size()[2]
+
+        # Number of channels (24 in their example)
+        # n_channels = x.size()[1]
+
+        # Dimension of the image (does not apply to our code)
+        d = x.size()[1]
         # x_flat = (64 x 25 x 24)
-        x_flat = x.view(mb, n_channels, d * d).permute(0, 2, 1)
+
+        # Goes from (64, 24, 5, 5) to (64, 5^2, 24) shapewise
+        # x_flat = x.view(mb, n_channels, d * d).permute(0, 2, 1)
+
+        # For us, let's just keep it as is
+        x_flat = x.view(mb,d,1)
+
 
         # add coordinates
+        # (64, 25, 24) -> (64, 25, 26)
         x_flat = torch.cat([x_flat, self.coord_tensor], 2)
 
         # add question everywhere
-        qst = torch.unsqueeze(qst, 1)
-        qst = qst.repeat(1, 25, 1)
-        qst = torch.unsqueeze(qst, 2)
+        # I don't think we need this code, so I'm commenting it out.
+
+        # qst = torch.unsqueeze(qst, 1)
+        # qst = qst.repeat(1, 25, 1)
+        # qst = torch.unsqueeze(qst, 2)
+
+        # x_flat is now: (64, 1227, 1+2)
 
         # cast all pairs against each other
         x_i = torch.unsqueeze(x_flat, 1)  # (64x1x25x26+11)
-        x_i = x_i.repeat(1, 25, 1, 1)  # (64x25x25x26+11)
+        x_i = x_i.repeat(1, NUM_FEATURES, 1, 1)  # (64x25x25x26+11)
+
         x_j = torch.unsqueeze(x_flat, 2)  # (64x25x1x26+11)
-        x_j = torch.cat([x_j, qst], 3)
-        x_j = x_j.repeat(1, 1, 25, 1)  # (64x25x25x26+11)
+        # x_j = torch.cat([x_j, qst], 3)
+        x_j = x_j.repeat(1, 1, NUM_FEATURES, 1)  # (64x25x25x26+11)
 
         # concatenate all together
         x_full = torch.cat([x_i, x_j], 3)  # (64x25x25x2*26+11)
 
+
+
+
+
         # reshape for passing through network
-        x_ = x_full.view(mb * d * d * d * d, 63)
+
+        # FC = fully connected layer
+        # relu = relu activation function
+
+        # Once we finally get our data into a good format, we can pass it into the first hidden layer.
+        x_ = x_full.view(mb * NUM_FEATURES * NUM_FEATURES, 6)
         x_ = self.g_fc1(x_)
         x_ = F.relu(x_)
         x_ = self.g_fc2(x_)
@@ -160,8 +199,8 @@ class RN(BasicModel):
         x_ = self.g_fc4(x_)
         x_ = F.relu(x_)
 
-        # reshape again and sum
-        x_g = x_.view(mb, d * d * d * d, 256)
+        # reshape again and sum over all the so-called "object pairs"
+        x_g = x_.view(mb, NUM_FEATURES * NUM_FEATURES, 256)
         x_g = x_g.sum(1).squeeze()
 
         """f"""

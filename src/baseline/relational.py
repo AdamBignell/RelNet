@@ -116,11 +116,13 @@ def main():
 
     # ======== Relational Network Goes Below ============
 
+    DEFAULT_BS = 1 # change to 64
+
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
     parser.add_argument('--model', type=str, choices=['RN', 'CNN_MLP'], default='RN', 
                         help='resume from model stored')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=DEFAULT_BS, metavar='N',
                         help='input batch size for training (default: 64)')
 
                         # Attention MLAllStars: I changed 
@@ -161,7 +163,8 @@ def main():
     #    EDIT THE CODE BELOW TO WORK WITH REDDIT EMBEDDINGS!
     # ===========================================================
 
-    NUM_FEATURES = 1227
+    # CHANGE THIS TO 1227 when doing the full analysis
+    NUM_FEATURES = 25
 
     input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
     output_tensor = torch.LongTensor(bs)
@@ -176,12 +179,14 @@ def main():
 
     train_data = []
     for i, tr in enumerate(trainXDev):
+        tr = tr[:NUM_FEATURES]
         tup = (tr, trainYDev[i])
         train_data.append(tup)
     train_data = np.array(train_data)
 
     test_data = []
     for i, te in enumerate(testXDev):
+        te = te[:NUM_FEATURES]
         tup = (te, testYDev[i])
         test_data.append(tup)
     test_data = np.array(test_data)
