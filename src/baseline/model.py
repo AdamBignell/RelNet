@@ -255,7 +255,6 @@ class RN(BasicModel):
         g_input = torch.empty(POSSIBLE_PAIRINGS, mb, 2 *
                               OBJ_LENGTH, dtype=torch.float)
 
-        # TODO : Fix this part
         g_input[0, :, :] = first_second
         g_input[1, :, :] = first_third
         g_input[2, :, :] = first_post
@@ -263,7 +262,13 @@ class RN(BasicModel):
         g_input[4, :, :] = second_post
         g_input[5, :, :] = third_post
 
+
+
         # Hold outputs of g
+        # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
+        # =======================================================
+        # TODO : Change the code below to account for this!
+
         g_output = torch.empty(
             POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
         
@@ -280,6 +285,7 @@ class RN(BasicModel):
             g_output[i,:] = x_
         
         # Sum output pairings elementwise
+
         f_input = g_output.sum(0)
 
         """f"""
@@ -287,6 +293,7 @@ class RN(BasicModel):
         x_f = F.relu(x_f)
 
         output = self.fcout(x_f)
+        # =======================================================
 
         return output
 
