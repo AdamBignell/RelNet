@@ -34,6 +34,15 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--resume', type=str,
                     help='resume from model stored')
+"""Default args
+Model:          RN
+Batch-size:     64
+Epochs:         20
+Learning rate:  0.0001
+No-cuda:        False
+Seed:           1
+Log-interval:   10
+"""
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()

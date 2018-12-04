@@ -106,6 +106,14 @@ def main():
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
+    # Remove the hand crafted features
+    trainXDev = trainXDev[:,263:]
+    trainYDev = trainYDev[:,263:]
+    valXDev = valXDev[:,263:]
+    valYDev = valYDev[:,263:]
+    testXDev = testXDev[:,263:]
+    testYDev = testYDev[:,263:]
+
     # This is just a peace of mind check
     print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
     print("\tValX Size \t= ", valXDev.shape)          # (600, 1227)
