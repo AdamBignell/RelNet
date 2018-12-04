@@ -56,6 +56,8 @@ def tensor_data(data, i, bs):
     input_data.data.resize_(input_data.size()).copy_(input_data)
     output_data.data.resize_(output_data.size()).copy_(output_data)
 
+    return input_data, output_data
+
 
 def cvt_data_axis(data):
     input_data = [e[0] for e in data]
@@ -63,15 +65,18 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
     
-def train(epoch, rel, model, input_tensor, output_tensor, bs, args):
+def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
     model.train()
 
-    random.shuffle(rel)
-    rel = cvt_data_axis(rel)
+    # Uncomment this later to shuffle
+    # random.shuffle(train_data)
+
+    # rel[0]: input
+    # rel[1]: output
+    rel = cvt_data_axis(train_data)
 
     for batch_idx in range(len(rel[0]) // bs):
-        tensor_data(rel, batch_idx, bs)
-        # accuracy_rel = model.train_(input_tensor, output_tensor)
+        input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
         accuracy_rel = model.naive_train_(input_tensor, output_tensor)
 
         if batch_idx % args.log_interval == 0:
@@ -105,13 +110,15 @@ def main():
     trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
     trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
+    NUM_HANDCRAFTED = 263
+
     # Remove the hand crafted features
-    trainXDev = trainXDev[:,263:]
-    trainYDev = trainYDev[:,263:]
-    valXDev = valXDev[:,263:]
-    valYDev = valYDev[:,263:]
-    testXDev = testXDev[:,263:]
-    testYDev = testYDev[:,263:]
+    trainXDev = trainXDev[:, NUM_HANDCRAFTED:]
+    trainYDev = trainYDev
+    valXDev = valXDev[:, NUM_HANDCRAFTED:]
+    valYDev = valYDev
+    testXDev = testXDev[:, NUM_HANDCRAFTED:]
+    testYDev = testYDev
 
     # This is just a peace of mind check
     print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
@@ -123,7 +130,7 @@ def main():
 
     # ======== Relational Network Goes Below ============
 
-    DEFAULT_BS = 1 # change to 64
+    DEFAULT_BS = 4 # change to 64
 
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
@@ -162,16 +169,8 @@ def main():
 
     bs = args.batch_size
 
-    # WARNING: The code below has not yet been modified to work with the Reddit embeddings.
-    # The return statement prevents execution of the lines below.
-    print("Training complete!")
-
-    # ===========================================================
-    #    EDIT THE CODE BELOW TO WORK WITH REDDIT EMBEDDINGS!
-    # ===========================================================
-
-    # CHANGE THIS TO 1227 when doing the full analysis
-    NUM_FEATURES = 1227
+    TOTAL_FEATURES = 1227
+    NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
 
     input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
     output_tensor = torch.LongTensor(bs)
@@ -186,14 +185,12 @@ def main():
 
     train_data = []
     for i, tr in enumerate(trainXDev):
-        tr = tr[:NUM_FEATURES]
         tup = (tr, trainYDev[i])
         train_data.append(tup)
     train_data = np.array(train_data)
 
     test_data = []
     for i, te in enumerate(testXDev):
-        te = te[:NUM_FEATURES]
         tup = (te, testYDev[i])
         test_data.append(tup)
     test_data = np.array(test_data)
@@ -206,11 +203,6 @@ def main():
 
 
     return
-
-    # for epoch in range(1, args.epochs + 1):
-    #     train(epoch, rel_train)
-    #     test(epoch, rel_test)
-    #     model.save_model(epoch)
 
 
    
