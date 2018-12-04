@@ -34,6 +34,15 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--resume', type=str,
                     help='resume from model stored')
+"""Default args
+Model:          RN
+Batch-size:     64
+Epochs:         20
+Learning rate:  0.0001
+No-cuda:        False
+Seed:           1
+Log-interval:   10
+"""
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -42,6 +51,7 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
+# Choice of either a CNN + MLP, or a CNN + RN (which includes MLP and more)
 if args.model=='CNN_MLP': 
   model = CNN_MLP(args)
 else:
@@ -64,6 +74,7 @@ input_qst = Variable(input_qst)
 label = Variable(label)
 
 def tensor_data(data, i):
+    # Data comes in (image, question, answer) triplets
     img = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
     qst = torch.from_numpy(np.asarray(data[1][bs*i:bs*(i+1)]))
     ans = torch.from_numpy(np.asarray(data[2][bs*i:bs*(i+1)]))
