@@ -11,7 +11,7 @@ import pickle
 import random
 import torch
 from torch.autograd import Variable
-from model import RN
+from model import RN, SimpleAutoEncoder
 from sklearn.metrics import roc_auc_score
 
 def loadTrainDev(rootDirectory, labels=False):
@@ -94,7 +94,6 @@ def cvt_data_axis(data):
 def train(epoch, train_data, model, bs, args):
     model.train()
 
-    # Uncomment this later to shuffle
     random.shuffle(train_data)
 
     train_data = cvt_data_axis(train_data)
@@ -234,12 +233,42 @@ def main():
                         help='use Binary Cross Entropy loss function')
     parser.add_argument('--leftovers', action='store_true', default=USE_LEFTOVERS,
                         help='train on leftovers after mini-batches')
-    args = parser.parse_args()     
+    args = parser.parse_args()
+
+
+    """ Train the AutoEncoder """
+    autoEpochs = 50
+    autoencoder = SimpleAutoEncoder()
+    print("~~~ Starting autoencoder training! ~~~")
+    for epoch in range(autoEpochs):
+        print("Epoch: {}".format(epoch+1))
+        for i, data in enumerate(prop_all):
+            data = data[0]
+            data = Variable(torch.from_numpy(data)).float()
+
+        # for data in dataloader:
+        #     img, _ = data
+        #     img = img.view(img.size(0), -1)
+        #     img = Variable(img)
+            # ===================forward=====================
+            output = autoencoder(data)
+            loss = autoencoder.criterion(output, data)
+            # ===================backward====================
+            autoencoder.optimizer.zero_grad()
+            loss.backward()
+            autoencoder.optimizer.step()
+
+            if (i+1) % (len(prop_all)//100) == 0:
+                print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))
+            # else:
+            #     print("{}/{}".format(i+1, (len(prop_all)/1000)))
+
+        print('epoch [{}/{}], loss:{:.4f}'
+              .format(epoch + 1, autoEpochs, loss.data[0]))
+
+
 
     """Prepare the Relational Network"""
-
-    # Toggle for debugging
-    args.BCE = True
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     cuda = args.cuda

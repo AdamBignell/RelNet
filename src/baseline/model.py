@@ -6,37 +6,6 @@ import torch.optim as optim
 from torch.autograd import Variable
 import random
 
-
-class ConvInputModel(nn.Module):
-    def __init__(self):
-        super(ConvInputModel, self).__init__()
-
-        self.conv1 = nn.Conv2d(3, 24, 3, stride=2, padding=1)
-        self.batchNorm1 = nn.BatchNorm2d(24)
-        self.conv2 = nn.Conv2d(24, 24, 3, stride=2, padding=1)
-        self.batchNorm2 = nn.BatchNorm2d(24)
-        self.conv3 = nn.Conv2d(24, 24, 3, stride=2, padding=1)
-        self.batchNorm3 = nn.BatchNorm2d(24)
-        self.conv4 = nn.Conv2d(24, 24, 3, stride=2, padding=1)
-        self.batchNorm4 = nn.BatchNorm2d(24)
-
-    def forward(self, img):
-        """convolution"""
-        x = self.conv1(img)
-        x = F.relu(x)
-        x = self.batchNorm1(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = self.batchNorm2(x)
-        x = self.conv3(x)
-        x = F.relu(x)
-        x = self.batchNorm3(x)
-        x = self.conv4(x)
-        x = F.relu(x)
-        x = self.batchNorm4(x)
-        return x
-
-
 class FCOutputModel(nn.Module):
     def __init__(self):
         super(FCOutputModel, self).__init__()
@@ -64,7 +33,7 @@ class FCOutputModelBCE(nn.Module):
         x = F.relu(x)
         x = F.dropout(x)
         x = self.fc3(x)
-        return F.sigmoid(x)
+        return torch.sigmoid(x)
 
 
 class BasicModel(nn.Module):
@@ -150,6 +119,40 @@ HIDDEN_LAYER_UNITS = 256
 NUM_FEATURES = 964
 REG_PARAM = 0.00001
 
+class SimpleAutoEncoder(nn.Module):
+    def __init__(self):
+        super(SimpleAutoEncoder, self).__init__()
+        self.input_length = 1227
+        # self.input_length = 2 * OBJ_LENGTH
+        self.encoder = nn.Sequential(
+            nn.Linear(self.input_length, 64),
+            nn.ReLU(True),
+            nn.Linear(64, 32),
+            nn.ReLU(True),
+            nn.Linear(32, 12),
+            nn.ReLU(True),
+            nn.Linear(12, 3))
+
+        self.decoder = nn.Sequential(
+            nn.Linear(3, 12),
+            nn.ReLU(True),
+            nn.Linear(12, 32),
+            nn.ReLU(True),
+            nn.Linear(32, 64),
+            nn.ReLU(True),
+            nn.Linear(64, self.input_length),
+            nn.Tanh())
+
+        self.criterion = nn.MSELoss()
+        self.learning_rate = 1e-3
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+
 class RN(BasicModel):
     def __init__(self, args):
         super(RN, self).__init__(args, 'RN')
@@ -174,6 +177,7 @@ class RN(BasicModel):
             self.fcout = FCOutputModelBCE()
 
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=REG_PARAM)
+
 
     def forward(self, input_feats, args):
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
@@ -213,7 +217,7 @@ class RN(BasicModel):
         # now g_input is mb * 6 * 128, by swapping the first two rows
         g_input = g_input.permute(1, 0, 2)
 
-        # now reshape
+        # now reshape  (mb*6) x 128 =>
         g_input = g_input.contiguous().view(batch_size*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
 
         # Hold outputs of g
@@ -263,7 +267,12 @@ class RN(BasicModel):
         third_embedding = input_feats[:, 600:900]
         post_embedding = input_feats[:, 900:]
 
-        #For now, just take the first 64
+        # Dimensionality reduction by averaging
+        first_embedding = (first_embedding[:, ::3] + first_embedding[:, 1::3] + first_embedding[:, 2::3]) / 3
+        second_embedding = (second_embedding[:, ::3] + second_embedding[:, 1::3] + second_embedding[:, 2::3]) / 3
+        third_embedding = (third_embedding[:, ::3] + third_embedding[:, 1::3] + third_embedding[:, 2::3]) / 3
+
+        # For now, just take the first 64
         first_embedding = first_embedding[:, :OBJ_LENGTH]
         second_embedding = second_embedding[:, :OBJ_LENGTH]
         third_embedding = third_embedding[:, :OBJ_LENGTH]
