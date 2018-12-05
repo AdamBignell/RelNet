@@ -40,7 +40,6 @@ class ConvInputModel(nn.Module):
 class FCOutputModel(nn.Module):
     def __init__(self):
         super(FCOutputModel, self).__init__()
-
         self.fc2 = nn.Linear(256, 256)
 
         # Conflict = {True or False}
@@ -54,12 +53,24 @@ class FCOutputModel(nn.Module):
         x = self.fc3(x)
         return F.log_softmax(x, dim=0)
 
+class FCOutputModelBCE(nn.Module):
+    def __init__(self):
+        super(FCOutputModelBCE, self).__init__()
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 1)
+
+    def forward(self, x):
+        x = self.fc2(x)
+        x = F.relu(x)
+        x = F.dropout(x)
+        x = self.fc3(x)
+        return F.sigmoid(x)
+
 
 class BasicModel(nn.Module):
     def __init__(self, args, name):
         super(BasicModel, self).__init__()
         self.name = name
-
 
     def naive_guess(self, batch_size, input_feats):
         """Stubbed for subclass to implement"""
@@ -78,9 +89,12 @@ class BasicModel(nn.Module):
         self.optimizer.zero_grad()
         # Run input batch across relational net
         output = self.forward(input_feats, args)
+
         # Calculate loss on this batch
-        loss = F.nll_loss(output, label)
-        # loss = F.binary_cross_entropy(output, label)
+        if not args.BCE:
+            loss = F.nll_loss(output, label)
+        else:
+            loss = F.binary_cross_entropy(output.view(batch_size), label.float())
 
         # with torch.enable_grad(): # Enable gradient descent
         #     loss.backward()
@@ -88,19 +102,31 @@ class BasicModel(nn.Module):
         self.optimizer.step()
 
         # Get the actual argmax that indicates the label
-        pred = output.data.max(1)[1]
-        # Compare against gold standard
-        correct = pred.eq(label.data).cpu().sum()
+        if not args.BCE:
+            pred = output.data.max(1)[1]
+            correct = pred.eq(label.data).cpu().sum()
+        else:
+            pred = output.view(output.shape[0]).round()
+            correct = pred.eq(label.data.float()).cpu().sum()
+
         accuracy = correct * 100. / len(label)
         return accuracy
 
 
     def test_(self, input_feats, label, args):
         output = self.forward(input_feats, args)
-        pred = output.data.max(1)[1]
-        # predictions are log probabilities, so convert back to actual probs
-        posClassProbs = torch.exp(output)[:, 1].detach().numpy()
-        correct = pred.eq(label.data).cpu().sum()
+
+        # Get the actual argmax that indicates the label
+        if not args.BCE:
+            pred = output.data.max(1)[1]
+            correct = pred.eq(label.data).cpu().sum()
+            # predictions are log probabilities, so convert back to actual probs
+            posClassProbs = torch.exp(output)[:, 1].detach().numpy()
+        else:
+            pred = output.view(output.shape[0]).round()
+            correct = pred.eq(label.data.float()).cpu().sum()
+            posClassProbs = output[:, 0].detach().numpy()
+
         accuracy = correct * 100. / len(label)
         return accuracy, posClassProbs
 
@@ -141,7 +167,36 @@ class RN(BasicModel):
 
         self.f_fc1 = nn.Linear(HIDDEN_LAYER_UNITS, HIDDEN_LAYER_UNITS)
 
-        self.fcout = FCOutputModel()
+        if not args.BCE:
+            self.fcout = FCOutputModel()
+        else:
+            self.fcout = FCOutputModelBCE()
+
+        # # Coordinates for objects i and j
+        # self.coord_oi = torch.FloatTensor(args.batch_size, 2)
+        # self.coord_oj = torch.FloatTensor(args.batch_size, 2)
+        # if args.cuda:
+        #     self.coord_oi = self.coord_oi.cuda()
+        #     self.coord_oj = self.coord_oj.cuda()
+        # self.coord_oi = Variable(self.coord_oi)
+        # self.coord_oj = Variable(self.coord_oj)
+
+        # # prepare coord tensor
+        # def cvt_coord(i):
+        #     return [(i / 5 - 2) / 2., (i % 5 - 2) / 2.]
+
+        # self.coord_tensor = torch.FloatTensor(args.batch_size, NUM_FEATURES, 2)
+
+        # if args.cuda:
+        #     self.coord_tensor = self.coord_tensor.cuda()
+        # self.coord_tensor = Variable(self.coord_tensor)
+
+        # np_coord_tensor = np.zeros((args.batch_size, NUM_FEATURES, 2))
+
+        # for i in range(NUM_FEATURES):
+        #     np_coord_tensor[:, i, :] = np.array(cvt_coord(i))
+        # self.coord_tensor.data.copy_(torch.from_numpy(np_coord_tensor))
+
 
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
 

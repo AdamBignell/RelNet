@@ -224,7 +224,14 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--resume', type=str,
                         help='resume from model stored')
+    parser.add_argument('--BCE', action='store_true', default=False,
+                        help='use Binary Cross Entropy loss function')
     args = parser.parse_args()     
+
+    """Prepare the Relational Network"""
+
+    # Toggle for debugging
+    args.BCE = True
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     cuda = args.cuda
@@ -237,6 +244,10 @@ def main():
 
     bs = args.batch_size
 
+    if args.cuda:
+        model.cuda()
+
+    # Count labels in New training set
     unique, counts = np.unique(allY, return_counts=True)
     print("\nNumber of conflict/non-conflict:")
     print(dict(zip(unique, counts)))
