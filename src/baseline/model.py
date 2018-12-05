@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 import random
 
+
 class FCOutputModel(nn.Module):
     def __init__(self):
         super(FCOutputModel, self).__init__()
@@ -21,6 +22,7 @@ class FCOutputModel(nn.Module):
         x = F.dropout(x)
         x = self.fc3(x)
         return F.log_softmax(x, dim=0)
+
 
 class FCOutputModelBCE(nn.Module):
     def __init__(self):
@@ -41,17 +43,17 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.name = name
 
-    def naive_guess(self, batch_size, input_feats):
-        """Stubbed for subclass to implement"""
-        probs = torch.empty(0, 0)
-        for i in range(batch_size):
-            guess = torch.empty(1, 2)
-            probconflict = random.uniform(0, 1)
-            probsafe = 1-probconflict
-            guess[0, 0] = probsafe
-            guess[0, 1] = probconflict
-            probs = torch.cat((probs, guess), 0)
-        return probs
+    # def naive_guess(self, batch_size, input_feats):
+    #     """Stubbed for subclass to implement"""
+    #     probs = torch.empty(0, 0)
+    #     for i in range(batch_size):
+    #         guess = torch.empty(1, 2)
+    #         probconflict = random.uniform(0, 1)
+    #         probsafe = 1-probconflict
+    #         guess[0, 0] = probsafe
+    #         guess[0, 1] = probconflict
+    #         probs = torch.cat((probs, guess), 0)
+    #     return probs
 
     def train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
@@ -143,7 +145,19 @@ class SimpleAutoEncoder(nn.Module):
         self.learning_rate = 1e-3
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
 
-    def forward(self, x):
+    def train_(self, embed, args):
+        self.optimizer.zero_grad()
+        output = self.forward(embed, args)
+        loss = self.criterion(output, embed)
+        loss.backward()
+        self.optimizer.step()
+        return
+
+    def forward(self, x, args):
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
         x = self.encoder(x)
         x = self.decoder(x)
         return x
@@ -219,9 +233,6 @@ class RN(BasicModel):
         # now reshape  (mb*6) x 128 =>
         g_input = g_input.contiguous().view(batch_size*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
 
-        # Hold outputs of g
-        # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
-
         x_ = g_input
         x_ = self.g_fc1(x_)
         x_ = F.relu(x_)
@@ -232,6 +243,8 @@ class RN(BasicModel):
         x_ = self.g_fc4(x_)
         x_ = F.relu(x_)
 
+        # Hold outputs of g
+        # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
         g_output = x_.view(batch_size, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS)
         # g_output = torch.empty(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
 

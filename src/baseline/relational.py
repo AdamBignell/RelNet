@@ -85,6 +85,24 @@ def tensor_data(data, i, bs, args, leftover=False):
     return input_tensor, output_tensor
 
 
+def autoencoder_tensor(data, i, bs, args, leftover=False):
+    if not args.no_cuda and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    if leftover:
+        input_tensor = torch.from_numpy(data[bs * i:])
+    else:
+        input_tensor = torch.from_numpy(data[bs*i:bs*(i+1)])
+
+    input_tensor.data.resize_(input_tensor.size()).copy_(input_tensor)
+
+    input_tensor = input_tensor.to(device)
+
+    return input_tensor
+
+
 def cvt_data_axis(data):
     input_data = [e[0] for e in data]
     output_data = [e[1] for e in data]
@@ -165,22 +183,63 @@ def test(epoch, test_data, model, bs, args):
     return
 
 
+def train_autoencoder(epoch, train_data, autoencoder, bs, args):
+    autoencoder.train()
+
+    train_data = train_data[:, 0]
+    random.shuffle(train_data)
+    train_data = np.array(list(train_data[:][:]), dtype=np.float32)
+
+    # train_data = cvt_data_axis(train_data)
+    N = len(train_data)
+
+    for batch_idx in range(N // bs):
+        # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
+        input_tensor = autoencoder_tensor(train_data, batch_idx, bs, args)
+
+        #     data = data[0]
+        #     data = Variable(torch.from_numpy(data)).float()
+        #
+        first_embedding, second_embedding, third_embedding, post_embedding = extract_embeddings(input_tensor)
+        embeds = [first_embedding, second_embedding, third_embedding]
+
+        for embed in embeds:
+            # Forwards
+            autoencoder.train_(embed, args)
+            # code = autoencoder.encode(embed)
+
+        #     if (i+1) % (len(prop_all)//100) == 0:
+        #         print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))
+        #     # else:
+        #     #     print("{}/{}".format(i+1, (len(prop_all)/1000)))
+        #
+    # print('epoch {} complete'.format(epoch+1))
+
+    # if args.leftovers:
+    #     # TODO : Refactor (low priority, but duplicated code)
+    #     leftover = N - bs*(N//bs)
+    #     if leftover > 0:
+    #         batch_idx = N // bs
+    #         input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
+    #         accuracy = model.train_(input_tensor, output_tensor, leftover, args)
+
+    return
+
+
 def extract_embeddings(input_feats):
     """Extract embeddings from 1227 long input vector"""
-
     INPUT_FEAT_LENGTH = 1227
     HANDCRAFTED_FEATURES = 263
-    numExamples = input_feats.shape[0]
+    batch_size = input_feats.shape[0]
 
     # input_feats = input_feats.view(NUM_FEATURES)
 
-    input_feats = input_feats[HANDCRAFTED_FEATURES:].view(
-        1227-263)  # remove features and flatten
+    input_feats = input_feats[:, HANDCRAFTED_FEATURES:]
 
-    first_embedding = input_feats[:300]
-    second_embedding = input_feats[300:600]
-    third_embedding = input_feats[600:900]
-    post_embedding = input_feats[900:]
+    first_embedding = input_feats[:, :300]
+    second_embedding = input_feats[:, 300:600]
+    third_embedding = input_feats[:, 600:900]
+    post_embedding = input_feats[:, 900:]
 
     embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
 
@@ -267,40 +326,17 @@ def main():
     Note that the post embeddings are already of length 64, hence they do not need to be passed through
     the autoencoder.
     """
-    autoEpochs = 10
+    autoEpochs = 2
     autoencoder = SimpleAutoEncoder()
+    ae_bs = 64
 
     print("~~~ Starting autoencoder training! ~~~")
-    # TODO : Implement minibatching
-    # TODO : After training autoencoder, encode all examples
-    for epoch in range(autoEpochs):
-        print("Epoch: {}".format(epoch+1))
-        for i, data in enumerate(prop_train):
-            data = data[0]
-            data = Variable(torch.from_numpy(data)).float()
+    # # TODO : After training autoencoder, encode all examples
+    for epoch in range(1, autoEpochs + 1):
+        print("Training autoencoder: epoch {}".format(epoch))
+        train_autoencoder(epoch, prop_train, autoencoder, ae_bs, args)
 
-            first_embedding, second_embedding, third_embedding, post_embedding = extract_embeddings(data)
-            embeds = [first_embedding, second_embedding, third_embedding]
-
-            for embed in embeds:
-                # Forwards
-                output = autoencoder(embed)
-                loss = autoencoder.criterion(output, embed)
-                # Backwards
-                autoencoder.optimizer.zero_grad()
-                loss.backward()
-                autoencoder.optimizer.step()
-
-                code = autoencoder.encode(embed)
-
-            if (i+1) % (len(prop_all)//100) == 0:
-                print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))
-            # else:
-            #     print("{}/{}".format(i+1, (len(prop_all)/1000)))
-
-        print('epoch [{}/{}], loss:{:.4f}'
-              .format(epoch + 1, autoEpochs, loss.data[0]))
-
+    # Use the autoencoder to encode all the features
 
 
     """Prepare the Relational Network"""
