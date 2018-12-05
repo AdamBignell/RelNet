@@ -339,13 +339,36 @@ class RN(BasicModel):
         third_embedding = input_feats[:, 600:900]
         post_embedding = input_feats[:, 900:]
 
-
-        # Todo: Implement autoencoder or other dim-reduction technique
-
-        # For now, just take the first 64
+        #For now, just take the first 64
         first_embedding = first_embedding[:, :OBJ_LENGTH]
         second_embedding = second_embedding[:, :OBJ_LENGTH]
         third_embedding = third_embedding[:, :OBJ_LENGTH]
         post_embedding = post_embedding[:, :OBJ_LENGTH]
 
-        return first_embedding, second_embedding, third_embedding, post_embedding
+        embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
+        # pca_embeds = []
+        # K = 64
+        # from sklearn.decomposition import PCA
+        # pca = PCA(n_components=K)
+        #
+        # for i, emb in enumerate(embeddings):
+        #     emb_trans = torch.tensor(pca.fit_transform(emb.numpy()))
+        #
+        #     # X = emb
+        #     # mean = torch.mean(X, 1, keepdim=True)
+        #     # X = X - mean.expand(-1, emb.shape[1])
+        #     #
+        #     # U, S, V = torch.svd(torch.t(X))
+        #     # pca_emb = torch.mm(X, U[:, :K])
+        #     #
+        #     # pca_embeds.append(pca_emb)
+        #     pca_embeds.append(emb_trans)
+
+        # Todo: Implement autoencoder
+
+
+        return embeddings
+
+# def unsup.pacov(x):
+#     mean = torch.mean(x, 1)
+#     xm = x - mean.expand(x)

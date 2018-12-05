@@ -63,8 +63,6 @@ def loadNonconflictData(rootDirectory):
     return x, y, ids
 
 
-
-
 def tensor_data(data, i, bs, args, leftover=False):
     if not args.no_cuda and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -110,16 +108,17 @@ def train(epoch, train_data, model, bs, args):
 
         accuracy = model.train_(input_tensor, output_tensor, bs, args)
 
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(
-                epoch, batch_idx * bs, N, batch_idx*bs/N*100, accuracy))
+        # if batch_idx % args.log_interval == 0:
+        #     print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(
+        #         epoch, batch_idx * bs, N, batch_idx*bs/N*100, accuracy))
 
-    # TODO : Refactor (low priority, but duplicated code)
-    leftover = N - bs*(N//bs)
-    if leftover > 0:
-        batch_idx = N // bs
-        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
-        accuracy = model.train_(input_tensor, output_tensor, leftover, args)
+    if args.leftovers:
+        # TODO : Refactor (low priority, but duplicated code)
+        leftover = N - bs*(N//bs)
+        if leftover > 0:
+            batch_idx = N // bs
+            input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
+            accuracy = model.train_(input_tensor, output_tensor, leftover, args)
 
     return
 
@@ -145,34 +144,41 @@ def test(epoch, test_data, model, bs, args):
 
     print('\n')
 
-    # TODO : Refactor (low priority, but duplicated code)
-    leftover = N - bs*(N//bs)
-    if leftover > 0:
-        batch_idx = N // bs
-        input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args, leftover=True)
-        acc, predPos = model.test_(input_tensor, output_tensor, args)
+    if args.leftovers:
+        # TODO : Refactor (low priority, but duplicated code)
+        leftover = N - bs*(N//bs)
+        if leftover > 0:
+            batch_idx = N // bs
+            input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args, leftover=True)
+            acc, predPos = model.test_(input_tensor, output_tensor, args)
 
-        accuracy.append(acc)
-        allPredProbs.extend(predPos.tolist())
+            accuracy.append(acc)
+            allPredProbs.extend(predPos.tolist())
 
+    allLabels = allLabels[:len(allPredProbs)]
     # Compute the AUC given ground truth (label) and probabilities for the positive class (i.e. the True class)
     auc = roc_auc_score(allLabels, allPredProbs)
     auc = round(auc, 4)
 
     accuracy = sum(accuracy) / len(accuracy)
-    print('\n Test set: Conflict Accuracy: {:.0f}%\n'.format(accuracy))
-    print('\n AUC Score: {}\n'.format(auc))
+    print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
+    print('AUC Score: {}'.format(auc))
 
     return
 
 
 def main():
     DEFAULT_BS = 64
-    DEFAULT_EPOCHS = 5
     TOTAL_FEATURES = 1227
     NUM_HANDCRAFTED = 263
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
+    USE_LEFTOVERS = True
+
+    # Change test set size here:
     test_size = 2000
+
+    # Change number of epochs here
+    DEFAULT_EPOCHS = 50
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
@@ -226,6 +232,8 @@ def main():
                         help='resume from model stored')
     parser.add_argument('--BCE', action='store_true', default=False,
                         help='use Binary Cross Entropy loss function')
+    parser.add_argument('--leftovers', action='store_true', default=USE_LEFTOVERS,
+                        help='train on leftovers after mini-batches')
     args = parser.parse_args()     
 
     """Prepare the Relational Network"""
