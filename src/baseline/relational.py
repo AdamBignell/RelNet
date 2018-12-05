@@ -90,7 +90,7 @@ def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
         accuracy = model.naive_train_(input_tensor, output_tensor, bs)
 
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, N * 2, \
+            print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(epoch, batch_idx * bs, N, \
                                                                                                                            100. * batch_idx * bs/ N, accuracy))
             
 
