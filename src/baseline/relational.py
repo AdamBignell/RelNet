@@ -239,7 +239,7 @@ def main():
     """Prepare the Relational Network"""
 
     # Toggle for debugging
-    args.BCE = True
+    # args.BCE = True
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     cuda = args.cuda

@@ -64,7 +64,7 @@ class FCOutputModelBCE(nn.Module):
         x = F.relu(x)
         x = F.dropout(x)
         x = self.fc3(x)
-        return F.sigmoid(x)
+        return torch.sigmoid(x)
 
 
 class BasicModel(nn.Module):
@@ -339,7 +339,12 @@ class RN(BasicModel):
         third_embedding = input_feats[:, 600:900]
         post_embedding = input_feats[:, 900:]
 
-        #For now, just take the first 64
+        # Dimensionality reduction by averaging
+        first_embedding = (first_embedding[:, ::3] + first_embedding[:, 1::3] + first_embedding[:, 2::3]) / 3
+        second_embedding = (second_embedding[:, ::3] + second_embedding[:, 1::3] + second_embedding[:, 2::3]) / 3
+        third_embedding = (third_embedding[:, ::3] + third_embedding[:, 1::3] + third_embedding[:, 2::3]) / 3
+
+        # For now, just take the first 64
         first_embedding = first_embedding[:, :OBJ_LENGTH]
         second_embedding = second_embedding[:, :OBJ_LENGTH]
         third_embedding = third_embedding[:, :OBJ_LENGTH]
