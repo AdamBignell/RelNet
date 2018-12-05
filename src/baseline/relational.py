@@ -12,7 +12,7 @@ import random
 import torch
 from torch.autograd import Variable
 from model import RN
-
+from sklearn.metrics import roc_auc_score
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -62,32 +62,37 @@ def loadNonconflictData(rootDirectory):
     ids = open(rootDirectory + "nonconflictIDs_dev.txt", 'r').readlines()
     return x, y, ids
 
-def tensor_data(data, i, bs, args):
+
+
+
+def tensor_data(data, i, bs, args, leftover=False):
     if not args.no_cuda and torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
 
-    input_data = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
-    output_data = torch.from_numpy(np.asarray(data[1][bs*i:bs*(i+1)]))
+    if leftover:
+        input_tensor = torch.from_numpy(np.asarray(data[0][bs * i:]))
+        output_tensor = torch.from_numpy(np.asarray(data[1][bs * i:]))
+    else:
+        input_tensor = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
+        output_tensor = torch.from_numpy(np.asarray(data[1][bs*i:bs*(i+1)]))
 
-    input_data = input_data.to(device)
-    output_data = output_data.to(device)
-    
-    input_data.data.resize_(input_data.size()).copy_(input_data)
-    output_data.data.resize_(output_data.size()).copy_(output_data)
-    return input_data, output_data
+    input_tensor.data.resize_(input_tensor.size()).copy_(input_tensor)
+    output_tensor.data.resize_(output_tensor.size()).copy_(output_tensor)
 
-    return input_data, output_data
+
+    input_tensor = input_tensor.to(device)
+    output_tensor = output_tensor.to(device)
+
+
+    return input_tensor, output_tensor
 
 
 def cvt_data_axis(data):
     input_data = [e[0] for e in data]
     output_data = [e[1] for e in data]
     return (input_data, output_data)
-
-    
-
 
 
 def train(epoch, train_data, model, bs, args):
@@ -107,8 +112,16 @@ def train(epoch, train_data, model, bs, args):
 
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(
-                epoch, batch_idx * bs, N, accuracy, 100))
+                epoch, batch_idx * bs, N, batch_idx*bs/N*100, accuracy))
 
+    # TODO : Refactor (low priority, but duplicated code)
+    leftover = N - bs*(N//bs)
+    if leftover > 0:
+        batch_idx = N // bs
+        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
+        accuracy = model.train_(input_tensor, output_tensor, leftover, args)
+
+    return
 
 def test(epoch, test_data, model, bs, args):
     model.eval()
@@ -118,7 +131,6 @@ def test(epoch, test_data, model, bs, args):
 
     allLabels = test_data[1]
     allPredProbs = []
-
     accuracy = []
 
     for batch_idx in range(N // bs):
@@ -131,28 +143,30 @@ def test(epoch, test_data, model, bs, args):
         accuracy.append(acc)
         allPredProbs.extend(predPos.tolist())
 
-    from sklearn.metrics import roc_auc_score
+    print('\n')
+
+    # TODO : Refactor (low priority, but duplicated code)
+    leftover = N - bs*(N//bs)
+    if leftover > 0:
+        batch_idx = N // bs
+        input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args, leftover=True)
+        acc, predPos = model.test_(input_tensor, output_tensor, args)
+
+        accuracy.append(acc)
+        allPredProbs.extend(predPos.tolist())
 
     # Compute the AUC given ground truth (label) and probabilities for the positive class (i.e. the True class)
     auc = roc_auc_score(allLabels, allPredProbs)
-
-    print(auc)
+    auc = round(auc, 4)
 
     accuracy = sum(accuracy) / len(accuracy)
     print('\n Test set: Conflict Accuracy: {:.0f}%\n'.format(accuracy))
+    print('\n AUC Score: {}\n'.format(auc))
+
+    return
 
 
 def main():
-    print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
-
-    # Set the below to whatever your machine uses
-    DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
-
-    print("Loading dev data...")
-
-    # trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
-    # trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
-
     DEFAULT_BS = 64
     DEFAULT_EPOCHS = 5
     TOTAL_FEATURES = 1227
@@ -160,13 +174,12 @@ def main():
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
     test_size = 2000
 
-    # # This is just a peace of mind check
-    # print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
-    # print("\tValX Size \t= ", valXDev.shape)          # (600, 1227)
-    # print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227)
-    # print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
-    # print("\tValY Size \t= ", valYDev.shape)          # (600, )
-    # print("\tTestY Size \t= ", testYDev.shape)        # (600, )
+    print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
+
+    # Set the below to whatever your machine uses
+    DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
+
+    print("Loading dev data...")
 
     # New version of the dev data, sorted by label
     conX, conY, conIDs = loadConflictData(DEV_DIR)
@@ -214,26 +227,15 @@ def main():
     args = parser.parse_args()     
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
+    cuda = args.cuda
 
     torch.manual_seed(args.seed)
-    if args.cuda:
+    if cuda:
         torch.cuda.manual_seed(args.seed)
 
-    # The relational network model itself
     model = RN(args)
 
     bs = args.batch_size
-
-    # input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
-    # output_tensor = torch.LongTensor(bs)
-
-    # if args.cuda:
-    #     model.cuda()
-    #     input_tensor = input_tensor.cuda()
-    #     output_tensor = output_tensor.cuda()
-    #
-    # input_tensor = Variable(input_tensor)
-    # output_tensor = Variable(output_tensor)
 
     unique, counts = np.unique(allY, return_counts=True)
     print("\nNumber of conflict/non-conflict:")

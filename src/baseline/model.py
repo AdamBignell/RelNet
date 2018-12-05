@@ -277,7 +277,7 @@ class RN(BasicModel):
         # input_feats = input_feats.view(NUM_FEATURES)
 
         input_feats = input_feats[:, HANDCRAFTED_FEATURES:].view(
-            numExamples, INPUT_FEAT_LENGTH - HANDCRAFTED_FEATURES)  # remove features and flatten
+            numExamples, NUM_FEATURES)  # remove features and flatten
         
         first_embedding = input_feats[:, :300]
         second_embedding = input_feats[:, 300:600]
