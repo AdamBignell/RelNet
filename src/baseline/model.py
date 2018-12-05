@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 
 
+
 class ConvInputModel(nn.Module):
     def __init__(self):
         super(ConvInputModel, self).__init__()
@@ -42,7 +43,7 @@ class FCOutputModel(nn.Module):
 
         self.fc2 = nn.Linear(256, 256)
 
-        # Conflict = {True, False}
+        # Conflict = {True or False}
         N_CLASSES = 2
 
         self.fc3 = nn.Linear(256, N_CLASSES)
@@ -52,6 +53,7 @@ class FCOutputModel(nn.Module):
         x = F.relu(x)
         x = F.dropout(x)
         x = self.fc3(x)
+
         return F.log_softmax(x)
 
 
@@ -62,7 +64,7 @@ class BasicModel(nn.Module):
 
     def train_(self, input_feats, label):
         self.optimizer.zero_grad()
-        output = self(input_feats)
+        output = self.forward(input_feats)
         loss = F.nll_loss(output, label)
         loss.backward()
         self.optimizer.step()
@@ -70,29 +72,17 @@ class BasicModel(nn.Module):
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
         return accuracy
-
-    def naive_train_(self, input_feats, label):
-        """Naive train using the naive forward method"""
-        self.optimizer.zero_grad()
-        output = self.naive_forward(input_feats)
-        loss = F.nll_loss(output, label)
-        loss.backward()
-        self.optimizer.step()
-        pred = output.data.max(1)[1]
-        correct = pred.eq(label.data).cpu().sum()
-        accuracy = correct * 100. / len(label)
-        return accuracy
-
-    def naive_forward(self, input_feats):
-        """Stubbed for subclass to implement"""
-        return torch.empty(input_feats)
 
     def test_(self, input_feats, label):
-        output = self(input_feats)
+        output = self.forward(input_feats)
         pred = output.data.max(1)[1]
+
+        # predictions are log probabilities, so convert back to actual probs
+        posClassProbs = torch.exp(output)[:, 1].detach().numpy()
+
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
-        return accuracy
+        return accuracy, posClassProbs
 
     def save_model(self, epoch):
         torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
@@ -138,104 +128,7 @@ class RN(BasicModel):
 
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
 
-
-    # def forward(self, input_feats):
-    #     x = input_feats  #
-    #
-    #     # THESE NUMBERS ARE MADE UP!
-    #
-    #     USER_FEATS_START = 0
-    #     USER_FEATS_END = 200
-    #     SOURCE_FEATS_END = USER_FEATS_END + 200
-    #     TARGET_FEATS_END = SOURCE_FEATS_END + 200
-    #     # POST_FEATS_END = TARGET_FEATS_END + 364
-    #
-    #
-    #     xUser = x[:, :USER_FEATS_END]
-    #     xSource = x[:, USER_FEATS_END : SOURCE_FEATS_END]
-    #     xTarget = x[:, SOURCE_FEATS_END : TARGET_FEATS_END]
-    #     xPost = x[:, TARGET_FEATS_END:]
-    #
-    #     X = xUser
-    #     k = OBJ_LENGTH
-    #
-    #     # X_mean = torch.mean(X, 0)
-    #     # X = X - X_mean.expand_as(X)
-    #     # U, S, V = torch.svd(torch.t(X))
-    #     # C = torch.mm(X, U[:, :k])
-    #
-    #
-    #
-    #     x = torch.cat([xUser[:OBJ_LENGTH], xSource[:OBJ_LENGTH], xTarget[:OBJ_LENGTH], xPost[:OBJ_LENGTH]])
-    #
-    #
-    #
-    #
-    #
-    #     # We need to convert x into a mb * (64+64+64+64) vector
-    #
-    #
-    #     """g"""
-    #     # Minibatch size
-    #     mb = x.size()[0]
-    #
-    #     # Dimension of the image (does not apply to our code)
-    #     d = x.size()[1]
-    #     # x_flat = (64 x 25 x 24)
-    #
-    #     # Goes from (64, 24, 5, 5) to (64, 5^2, 24) shapewise
-    #     # x_flat = x.view(mb, n_channels, d * d).permute(0, 2, 1)
-    #
-    #     # For us, let's just keep it as is
-    #     x_flat = x.view(mb,d,1)
-    #
-    #
-    #     # add coordinates
-    #     # (64, 25, 24) -> (64, 25, 26)
-    #     x_flat = torch.cat([x_flat, self.coord_tensor], 2)
-    #
-    #     # x_flat is now: (64, 1227, 1+2)
-    #
-    #     # cast all pairs against each other
-    #     x_i = torch.unsqueeze(x_flat, 1)  # (64x1x25x26+11)
-    #     x_i = x_i.repeat(1, NUM_FEATURES, 1, 1)  # (64x25x25x26+11)
-    #
-    #     x_j = torch.unsqueeze(x_flat, 2)  # (64x25x1x26+11)
-    #     # x_j = torch.cat([x_j, qst], 3)
-    #     x_j = x_j.repeat(1, 1, NUM_FEATURES, 1)  # (64x25x25x26+11)
-    #
-    #     # concatenate all together
-    #     x_full = torch.cat([x_i, x_j], 3)  # (64x25x25x2*26+11)
-    #
-    #     # reshape for passing through network
-    #
-    #     # FC = fully connected layer
-    #     # relu = relu activation function
-    #
-    #     # Once we finally get our data into a good format, we can pass it into the first hidden layer.
-    #     # We can also try other activation functions
-    #     x_ = x_full.view(mb * NUM_FEATURES * NUM_FEATURES, 6)
-    #     x_ = self.g_fc1(x_)
-    #     x_ = F.relu(x_)
-    #     x_ = self.g_fc2(x_)
-    #     x_ = F.relu(x_)
-    #     x_ = self.g_fc3(x_)
-    #     x_ = F.relu(x_)
-    #     x_ = self.g_fc4(x_)
-    #     x_ = F.relu(x_)
-    #
-    #     # reshape again and sum over all the so-called "object pairs"
-    #     x_g = x_.view(mb, NUM_FEATURES * NUM_FEATURES, 256)
-    #     x_g = x_g.sum(1).squeeze()
-    #
-    #     """f"""
-    #     x_f = self.f_fc1(x_g)
-    #     x_f = F.relu(x_f)
-    #
-    #     return self.fcout(x_f)
-
-    def naive_forward(self, input_feats):
-        """non-torch approach to training"""
+    def forward(self, input_feats):
         mb = input_feats.shape[0]
 
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
@@ -272,8 +165,6 @@ class RN(BasicModel):
 
         # Hold outputs of g
         # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
-        # =======================================================
-        # TODO : Change the code below to account for this!
 
         x_ = g_input
         x_ = self.g_fc1(x_)
@@ -308,8 +199,8 @@ class RN(BasicModel):
         x_f = self.f_fc1(f_input)
         x_f = F.relu(x_f)
 
+        # Each example gets two values (a LOG probability for False, and a LOG probability for True)
         output = self.fcout(x_f)
-        # =======================================================
 
         return output
 

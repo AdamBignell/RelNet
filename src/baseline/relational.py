@@ -69,7 +69,7 @@ def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
     model.train()
 
     # Uncomment this later to shuffle
-    # random.shuffle(train_data)
+    random.shuffle(train_data)
 
     # rel[0]: input
     # rel[1]: output
@@ -77,11 +77,11 @@ def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
 
     for batch_idx in range(len(rel[0]) // bs):
         input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
-        accuracy_rel = model.naive_train_(input_tensor, output_tensor)
-
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, len(rel[0]) * 2, \
-                                                                                                                           100. * batch_idx * bs/ len(rel[0]), accuracy_rel))
+        accuracy_rel = model.train_(input_tensor, output_tensor)
+        #
+        # if batch_idx % args.log_interval == 0:
+        #     print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, len(rel[0]) * 2, \
+        #                                                                                                                    100. * batch_idx * bs/ len(rel[0]), accuracy_rel))
             
 
 def test(epoch, rel, model, input_tensor, output_tensor, bs, args):
@@ -89,13 +89,30 @@ def test(epoch, rel, model, input_tensor, output_tensor, bs, args):
 
     rel = cvt_data_axis(rel)
 
+    allLabels = rel[1]
+    allPredProbs = []
+
     accuracy_rels = []
+
     for batch_idx in range(len(rel[0]) // bs):
-        tensor_data(rel, batch_idx, bs)
-        accuracy_rels.append(model.test_(input_tensor, output_tensor))
+        input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
+        acc, predPos = model.test_(input_tensor, output_tensor)
+
+        # Compare labels (output_tensor) to input_tensor0
+        # fpr, tpr, _ = roc_curve(output_tensor, pred)
+
+        accuracy_rels.append(acc)
+        allPredProbs.extend(predPos.tolist())
+
+    from sklearn.metrics import roc_auc_score
+
+    # Compute the AUC given ground truth (label) and probabilities for the positive class (i.e. the True class)
+    auc = roc_auc_score(allLabels, allPredProbs)
+
+    print(auc)
 
     accuracy_rel = sum(accuracy_rels) / len(accuracy_rels)
-    print('\n Test set: Relation accuracy: {:.0f}% | Non-relation accuracy: {:.0f}%\n'.format(
+    print('\n Test set: Relation accuracy: {:.0f}% \n'.format(
         accuracy_rel))
 
 
@@ -130,7 +147,8 @@ def main():
 
     # ======== Relational Network Goes Below ============
 
-    DEFAULT_BS = 4 # change to 64
+    DEFAULT_BS = 2 # change to 64
+    DEFAULT_EPOCHS = 5
 
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
@@ -140,7 +158,7 @@ def main():
                         help='input batch size for training (default: 64)')
 
                         # Attention MLAllStars: I changed 
-    parser.add_argument('--epochs', type=int, default=1, metavar='N',
+    parser.add_argument('--epochs', type=int, default=DEFAULT_EPOCHS, metavar='N',
                         help='number of epochs to train (default: 1)')
     parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
                         help='learning rate (default: 0.0001)')
