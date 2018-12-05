@@ -82,13 +82,15 @@ class BasicModel(nn.Module):
             probs = torch.cat((probs, guess), 0)
         return probs
 
-    def naive_train_(self, input_feats, label, batch_size):
+    def naive_train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
         # Run input batch across relational net
-        output = self.naive_forward(input_feats)
+        output = self.naive_forward(input_feats, args)
         # Calculate loss on this batch
         loss = F.nll_loss(output, label)
+        # loss = F.binary_cross_entropy(output, label)
+
         with torch.enable_grad(): # Enable gradient descent
             loss.backward()
         self.optimizer.step()
@@ -100,8 +102,8 @@ class BasicModel(nn.Module):
         accuracy = correct * 100. / len(label)
         return accuracy
 
-    def test_(self, input_feats, label):
-        output = self.naive_forward(input_feats)
+    def test_(self, input_feats, label, args):
+        output = self.naive_forward(input_feats, args)
         pred = output.data.max(1)[1]
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
@@ -251,7 +253,7 @@ class RN(BasicModel):
 # OBJ_LENGTH = 64
 # HIDDEN_LAYER_UNITS = 256
 
-    def naive_forward(self, input_feats):
+    def naive_forward(self, input_feats, args):
         """non-torch approach to training"""
 
         # This function separates the embeddings into their respective parts
@@ -270,9 +272,16 @@ class RN(BasicModel):
         second_post = torch.cat([second_embedding, post_embedding], 1)
         third_post = torch.cat([third_embedding, post_embedding], 1)
 
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+
         # Hold inputs to g
         g_input = torch.empty(POSSIBLE_PAIRINGS * batch_size, 2 *
-                              OBJ_LENGTH, dtype=torch.float)
+                                OBJ_LENGTH, dtype=torch.float, device=device)
+        g_output = torch.zeros(batch_size, HIDDEN_LAYER_UNITS, 
+                                dtype=torch.float, device=device)
 
         #g_inputs = []
         #g_inputs.extend([first_second, first_third, first_post, second_third, second_post, third_post])
@@ -289,9 +298,6 @@ class RN(BasicModel):
         g_input[batch_indices[4]:batch_indices[5],:] = second_post
         g_input[batch_indices[5]:batch_indices[6],:] = third_post
 
-        # Hold outputs of g
-        g_output = torch.zeros(
-            batch_size, HIDDEN_LAYER_UNITS, dtype=torch.float)
         
         """g"""
         for i in range(POSSIBLE_PAIRINGS):

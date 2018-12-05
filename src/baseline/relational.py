@@ -62,9 +62,18 @@ def loadNonconflictData(rootDirectory):
     ids = open(rootDirectory + "nonconflictIDs_dev.txt", 'r').readlines()
     return x, y, ids
 
-def tensor_data(data, i, bs):
+def tensor_data(data, i, bs, args):
+    if not args.no_cuda and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
     input_data = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
     output_data = torch.from_numpy(np.asarray(data[1][bs*i:bs*(i+1)]))
+
+    input_data = input_data.to(device)
+    output_data = output_data.to(device)
+    
     input_data.data.resize_(input_data.size()).copy_(input_data)
     output_data.data.resize_(output_data.size()).copy_(output_data)
     return input_data, output_data
@@ -76,7 +85,7 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
     
-def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
+def train(epoch, train_data, model, bs, args):
     model.train()
 
     random.shuffle(train_data)
@@ -85,25 +94,25 @@ def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
 
     for batch_idx in range(N // bs):
         # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
-        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs)
+        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
         # accuracy_rel = model.train_(input_tensor, output_tensor)
-        accuracy = model.naive_train_(input_tensor, output_tensor, bs)
+        accuracy = model.naive_train_(input_tensor, output_tensor, bs, args)
 
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(epoch, batch_idx * bs, N, \
                                                                                                                            100. * batch_idx * bs/ N, accuracy))
             
 
-def test(epoch, train_data, model, input_tensor, output_tensor, bs, args):
+def test(epoch, test_data, model, bs, args):
     model.eval()
 
-    train_data = cvt_data_axis(train_data)
-    N = len(train_data[0])
+    test_data = cvt_data_axis(test_data)
+    N = len(test_data[0])
 
     accuracy = []
     for batch_idx in range(N // bs):
-        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs)
-        accuracy.append(model.test_(input_tensor, output_tensor))
+        input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
+        accuracy.append(model.test_(input_tensor, output_tensor, args))
 
     accuracy = sum(accuracy) / len(accuracy)
     print('\n Test set: Conflict Accuracy: {:.0f}%\n'.format(accuracy))
@@ -214,11 +223,11 @@ def main():
 
     if args.cuda:
         model.cuda()
-        input_tensor = input_tensor.cuda()
-        output_tensor = output_tensor.cuda()
+    #     input_tensor = input_tensor.cuda()
+    #     output_tensor = output_tensor.cuda()
 
-    input_tensor = Variable(input_tensor)
-    output_tensor = Variable(output_tensor)
+    # input_tensor = Variable(input_tensor)
+    # output_tensor = Variable(output_tensor)
 
     # Old version of the Dev Data
     # train_data = []
@@ -244,10 +253,10 @@ def main():
     print("\nNumber of conflict/non-conflict:")
     print(dict(zip(unique, counts)))
     print("\nTraining...")
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(1, args.epochs + 10):
         # train_data =
-        train(epoch, prop_train, model, input_tensor, output_tensor, bs, args)
-        test(epoch, prop_test, model, input_tensor, output_tensor, bs, args)
+        train(epoch, prop_train, model, bs, args)
+        test(epoch, prop_test, model, bs, args)
         # model.save_model(epoch)
 
     print("Training complete!")
