@@ -48,6 +48,19 @@ def loadDevData(rootDirectory, labels=False):
     test_dev = loadTestDev(rootDirectory, labels)
     return train_dev, val_dev, test_dev
 
+def loadConflictData(rootDirectory):
+    """Loads specifically connections marked as a conflict"""
+    x = np.load(open(rootDirectory + "conflict_dev.npy", 'rb'))
+    y = np.load(open(rootDirectory + "conflict_Y_dev.npy", 'rb'))
+    ids = open(rootDirectory + "conflictIDs_dev.txt", 'r').readlines()
+    return x, y, ids
+
+def loadNonconflictData(rootDirectory):
+    """Loads specifically connections marked as a non-conflict"""
+    x = np.load(open(rootDirectory + "nonconflict_dev.npy", 'rb'))
+    y = np.load(open(rootDirectory + "nonconflict_Y_dev.npy", 'rb'))
+    ids = open(rootDirectory + "nonconflictIDs_dev.txt", 'r').readlines()
+    return x, y, ids
 
 def tensor_data(data, i, bs):
     input_data = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
@@ -104,21 +117,47 @@ def main():
     DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 
     print("Loading dev data...")
-    trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
-    trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
+    # trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
+    # trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
-    # THIS CONFLICTS WITH EMBEDDING EXTRACTION
-    # trainXDev = trainXDev[:,263:]
-    # valXDev = valXDev[:,263:]
-    # testXDev = testXDev[:,263:]
+    # # THIS CONFLICTS WITH EMBEDDING EXTRACTION
+    # # trainXDev = trainXDev[:,263:]
+    # # valXDev = valXDev[:,263:]
+    # # testXDev = testXDev[:,263:]
 
-    # This is just a peace of mind check
-    print("\tTrainX Size \t= ", trainXDev.shape)      # w/ all: (5000, 1227) w/o handcrafted: (5000, 964) 
-    print("\tValX Size \t= ", valXDev.shape)          # (600, 1227) w/o handcrafted: (5000, 964) 
-    print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227) w/o handcrafted: (5000, 964) 
-    print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
-    print("\tValY Size \t= ", valYDev.shape)          # (600, )
-    print("\tTestY Size \t= ", testYDev.shape)        # (600, )
+    # # This is just a peace of mind check
+    # # Old version of the Dev Data
+    # print("\tTrainX Size \t= ", trainXDev.shape)      # w/ all: (5000, 1227) w/o handcrafted: (5000, 964) 
+    # print("\tValX Size \t= ", valXDev.shape)          # (600, 1227) w/o handcrafted: (5000, 964) 
+    # print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227) w/o handcrafted: (5000, 964) 
+    # print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
+    # print("\tValY Size \t= ", valYDev.shape)          # (600, )
+    # print("\tTestY Size \t= ", testYDev.shape)        # (600, )
+
+    # New version of the dev data, sorted by label
+    conX, conY, conIDs = loadConflictData(DEV_DIR)
+    print("\n\tConflict X Size \t= ", conX.shape)
+    print("\tConflict Y Size \t= ", conY.shape)
+    print("\tConflict IDs Size \t= ", len(conIDs))
+
+    nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
+    print("\tNon-Conflict X Size \t= ", conX.shape)
+    print("\tNon-Conflict Y Size \t= ", conY.shape)
+    print("\tNon-Conflict IDs Size \t= ", len(conIDs))
+
+    allX = np.concatenate((conX, nonX), axis=0)
+    allY = np.concatenate((conY, nonY), axis=0)
+
+    # This is the version of the data with even representation
+    prop_all = []
+    for i in range(len(allX)):
+        prop_all.append((allX[i], allY[i][0]))
+    prop_all = np.array(prop_all)
+
+    random.shuffle(prop_all)
+    test_size = 2000
+    prop_test = prop_all[0:test_size]
+    prop_train= prop_all[test_size:]
 
     # ======== Relational Network Goes Below ============
 
@@ -181,24 +220,34 @@ def main():
     input_tensor = Variable(input_tensor)
     output_tensor = Variable(output_tensor)
 
-    train_data = []
-    for i, tr in enumerate(trainXDev):
-        tr = tr[:NUM_FEATURES]
-        tup = (tr, trainYDev[i])
-        train_data.append(tup)
-    train_data = np.array(train_data)
+    # Old version of the Dev Data
+    # train_data = []
+    # for i, tr in enumerate(trainXDev):
+    #     tr = tr[:NUM_FEATURES]
+    #     tup = (tr, trainYDev[i])
+    #     train_data.append(tup)
+    # train_data = np.array(train_data)
 
-    test_data = []
-    for i, te in enumerate(testXDev):
-        te = te[:NUM_FEATURES]
-        tup = (te, testYDev[i])
-        test_data.append(tup)
-    test_data = np.array(test_data)
+    # test_data = []
+    # for i, te in enumerate(testXDev):
+    #     te = te[:NUM_FEATURES]
+    #     tup = (te, testYDev[i])
+    #     test_data.append(tup)
+    # test_data = np.array(test_data)
 
+    # Count labels in Old training set
+    # unique, counts = np.unique(trainYDev, return_counts=True)
+    # print(dict(zip(unique, counts)))
+
+    # Count labels in New training set
+    unique, counts = np.unique(allY, return_counts=True)
+    print("\nNumber of conflict/non-conflict:")
+    print(dict(zip(unique, counts)))
+    print("\nTraining...")
     for epoch in range(1, args.epochs + 1):
         # train_data =
-        train(epoch, train_data, model, input_tensor, output_tensor, bs, args)
-        test(epoch, test_data, model, input_tensor, output_tensor, bs, args)
+        train(epoch, prop_train, model, input_tensor, output_tensor, bs, args)
+        test(epoch, prop_test, model, input_tensor, output_tensor, bs, args)
         # model.save_model(epoch)
 
     print("Training complete!")

@@ -51,7 +51,7 @@ class FCOutputModel(nn.Module):
         x = F.relu(x)
         x = F.dropout(x)
         x = self.fc3(x)
-        return F.log_softmax(x, dim=-1)
+        return F.log_softmax(x, dim=0)
 
 
 class BasicModel(nn.Module):
@@ -85,14 +85,17 @@ class BasicModel(nn.Module):
     def naive_train_(self, input_feats, label, batch_size):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
+        # Run input batch across relational net
         output = self.naive_forward(input_feats)
-        #print(output)
-        #print(label)
+        # Calculate loss on this batch
         loss = F.nll_loss(output, label)
-        with torch.enable_grad():
+        with torch.enable_grad(): # Enable gradient descent
             loss.backward()
         self.optimizer.step()
+
+        # Get the actual argmax that indicates the label
         pred = output.data.max(1)[1]
+        # Compare against gold standard
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
         return accuracy
@@ -250,38 +253,41 @@ class RN(BasicModel):
 
     def naive_forward(self, input_feats):
         """non-torch approach to training"""
+
+        # This function separates the embeddings into their respective parts
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
             input_feats)
 
+        # Save ourselves an argument and make it failsafe
         batch_size = input_feats.shape[0]
-        POSSIBLE_PAIRINGS = 6
+        POSSIBLE_PAIRINGS = 6 # Doubt that this will change
         
         # Define object-pairs
         first_second = torch.cat([first_embedding, second_embedding], 1)
         first_third = torch.cat([first_embedding, third_embedding], 1)
-        first_fourth = torch.cat([first_embedding, post_embedding], 1)
+        first_post = torch.cat([first_embedding, post_embedding], 1)
         second_third = torch.cat([second_embedding, third_embedding], 1)
-        second_fourth = torch.cat([second_embedding, post_embedding], 1)
-        third_fourth = torch.cat([third_embedding, post_embedding], 1)
+        second_post = torch.cat([second_embedding, post_embedding], 1)
+        third_post = torch.cat([third_embedding, post_embedding], 1)
 
         # Hold inputs to g
         g_input = torch.empty(POSSIBLE_PAIRINGS * batch_size, 2 *
                               OBJ_LENGTH, dtype=torch.float)
 
         #g_inputs = []
-        #g_inputs.extend([first_second, first_third, first_fourth, second_third, second_fourth, third_fourth])
+        #g_inputs.extend([first_second, first_third, first_post, second_third, second_post, third_post])
 
+        # Just make the indices general to batch sizes
         batch_indices = []
         for i in range(batch_size+1):
             batch_indices.append(i * batch_size)
-        
 
         g_input[batch_indices[0]:batch_indices[1],:] = first_second
         g_input[batch_indices[1]:batch_indices[2],:] = first_third
-        g_input[batch_indices[2]:batch_indices[3],:] = first_fourth
+        g_input[batch_indices[2]:batch_indices[3],:] = first_post
         g_input[batch_indices[3]:batch_indices[4],:] = second_third
-        g_input[batch_indices[4]:batch_indices[5],:] = second_fourth
-        g_input[batch_indices[5]:batch_indices[6],:] = third_fourth
+        g_input[batch_indices[4]:batch_indices[5],:] = second_post
+        g_input[batch_indices[5]:batch_indices[6],:] = third_post
 
         # Hold outputs of g
         g_output = torch.zeros(
@@ -289,7 +295,7 @@ class RN(BasicModel):
         
         """g"""
         for i in range(POSSIBLE_PAIRINGS):
-            x_ = self.g_fc1(g_input[batch_indices[0]:batch_indices[1],:].float())
+            x_ = self.g_fc1(g_input[batch_indices[i]:batch_indices[i+1],:].float())
             x_ = F.relu(x_)
             x_ = self.g_fc2(x_)
             x_ = F.relu(x_)
@@ -297,9 +303,9 @@ class RN(BasicModel):
             x_ = F.relu(x_)
             x_ = self.g_fc4(x_)
             x_ = F.relu(x_)
-            g_output = g_output + x_ # Sum output pairings elementwise
+            g_output = g_output + x_ # Sum output pairings element-wise DP style
         
-        
+        # Just for readability
         f_input = g_output
         #print(f_input.shape)
 
