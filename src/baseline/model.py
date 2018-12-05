@@ -198,7 +198,7 @@ class RN(BasicModel):
         # self.coord_tensor.data.copy_(torch.from_numpy(np_coord_tensor))
 
 
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
+        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=1e-5)
 
     def forward(self, input_feats, args):
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
