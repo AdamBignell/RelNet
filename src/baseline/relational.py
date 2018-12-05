@@ -165,6 +165,28 @@ def test(epoch, test_data, model, bs, args):
     return
 
 
+def extract_embeddings(input_feats):
+    """Extract embeddings from 1227 long input vector"""
+
+    INPUT_FEAT_LENGTH = 1227
+    HANDCRAFTED_FEATURES = 263
+    numExamples = input_feats.shape[0]
+
+    # input_feats = input_feats.view(NUM_FEATURES)
+
+    input_feats = input_feats[HANDCRAFTED_FEATURES:].view(
+        1227-263)  # remove features and flatten
+
+    first_embedding = input_feats[:300]
+    second_embedding = input_feats[300:600]
+    third_embedding = input_feats[600:900]
+    post_embedding = input_feats[900:]
+
+    embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
+
+    return embeddings
+
+
 def main():
     DEFAULT_BS = 64
     TOTAL_FEATURES = 1227
@@ -236,27 +258,40 @@ def main():
     args = parser.parse_args()
 
 
-    """ Train the AutoEncoder """
-    autoEpochs = 50
+    """ 
+    Train the AutoEncoder
+    
+    The autoencoder will work on 300-length vectors: the user embedding, the source subreddit embedding,
+    and the target subreddit embedding. These can be treated as individual objects.
+    
+    Note that the post embeddings are already of length 64, hence they do not need to be passed through
+    the autoencoder.
+    """
+    autoEpochs = 10
     autoencoder = SimpleAutoEncoder()
+
     print("~~~ Starting autoencoder training! ~~~")
+    # TODO : Implement minibatching
+    # TODO : After training autoencoder, encode all examples
     for epoch in range(autoEpochs):
         print("Epoch: {}".format(epoch+1))
-        for i, data in enumerate(prop_all):
+        for i, data in enumerate(prop_train):
             data = data[0]
             data = Variable(torch.from_numpy(data)).float()
 
-        # for data in dataloader:
-        #     img, _ = data
-        #     img = img.view(img.size(0), -1)
-        #     img = Variable(img)
-            # ===================forward=====================
-            output = autoencoder(data)
-            loss = autoencoder.criterion(output, data)
-            # ===================backward====================
-            autoencoder.optimizer.zero_grad()
-            loss.backward()
-            autoencoder.optimizer.step()
+            first_embedding, second_embedding, third_embedding, post_embedding = extract_embeddings(data)
+            embeds = [first_embedding, second_embedding, third_embedding]
+
+            for embed in embeds:
+                # Forwards
+                output = autoencoder(embed)
+                loss = autoencoder.criterion(output, embed)
+                # Backwards
+                autoencoder.optimizer.zero_grad()
+                loss.backward()
+                autoencoder.optimizer.step()
+
+                code = autoencoder.encode(embed)
 
             if (i+1) % (len(prop_all)//100) == 0:
                 print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))

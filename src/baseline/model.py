@@ -122,25 +122,21 @@ REG_PARAM = 0.00001
 class SimpleAutoEncoder(nn.Module):
     def __init__(self):
         super(SimpleAutoEncoder, self).__init__()
-        self.input_length = 1227
+        self.input_length = 300
         # self.input_length = 2 * OBJ_LENGTH
         self.encoder = nn.Sequential(
-            nn.Linear(self.input_length, 64),
+            nn.Linear(self.input_length, 256),
             nn.ReLU(True),
-            nn.Linear(64, 32),
+            nn.Linear(256, 128),
             nn.ReLU(True),
-            nn.Linear(32, 12),
-            nn.ReLU(True),
-            nn.Linear(12, 3))
+            nn.Linear(128, 64))
 
         self.decoder = nn.Sequential(
-            nn.Linear(3, 12),
+            nn.Linear(64, 128),
             nn.ReLU(True),
-            nn.Linear(12, 32),
+            nn.Linear(128, 256),
             nn.ReLU(True),
-            nn.Linear(32, 64),
-            nn.ReLU(True),
-            nn.Linear(64, self.input_length),
+            nn.Linear(256, self.input_length),
             nn.Tanh())
 
         self.criterion = nn.MSELoss()
@@ -151,6 +147,9 @@ class SimpleAutoEncoder(nn.Module):
         x = self.encoder(x)
         x = self.decoder(x)
         return x
+
+    def encode(self, x):
+        return self.encoder(x)
 
 
 class RN(BasicModel):
@@ -279,7 +278,5 @@ class RN(BasicModel):
         post_embedding = post_embedding[:, :OBJ_LENGTH]
 
         embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
-
-        # Todo: Implement autoencoder
 
         return embeddings
