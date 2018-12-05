@@ -11,7 +11,7 @@ import pickle
 import random
 import torch
 from torch.autograd import Variable
-from model import RN
+from model import RN, SimpleAutoEncoder
 from sklearn.metrics import roc_auc_score
 
 def loadTrainDev(rootDirectory, labels=False):
@@ -79,12 +79,28 @@ def tensor_data(data, i, bs, args, leftover=False):
     input_tensor.data.resize_(input_tensor.size()).copy_(input_tensor)
     output_tensor.data.resize_(output_tensor.size()).copy_(output_tensor)
 
-
     input_tensor = input_tensor.to(device)
     output_tensor = output_tensor.to(device)
 
-
     return input_tensor, output_tensor
+
+
+def autoencoder_tensor(data, i, bs, args, leftover=False):
+    if not args.no_cuda and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    if leftover:
+        input_tensor = torch.from_numpy(data[bs * i:])
+    else:
+        input_tensor = torch.from_numpy(data[bs*i:bs*(i+1)])
+
+    input_tensor.data.resize_(input_tensor.size()).copy_(input_tensor)
+
+    input_tensor = input_tensor.to(device)
+
+    return input_tensor
 
 
 def cvt_data_axis(data):
@@ -96,7 +112,6 @@ def cvt_data_axis(data):
 def train(epoch, train_data, model, bs, args):
     model.train()
 
-    # Uncomment this later to shuffle
     random.shuffle(train_data)
 
     train_data = cvt_data_axis(train_data)
@@ -121,6 +136,7 @@ def train(epoch, train_data, model, bs, args):
             accuracy = model.train_(input_tensor, output_tensor, leftover, args)
 
     return
+
 
 def test(epoch, test_data, model, bs, args):
     model.eval()
@@ -167,18 +183,82 @@ def test(epoch, test_data, model, bs, args):
     return
 
 
+def train_autoencoder(epoch, train_data, autoencoder, bs, args):
+    autoencoder.train()
+
+    train_data = train_data[:, 0]
+    random.shuffle(train_data)
+    train_data = np.array(list(train_data[:][:]), dtype=np.float32)
+
+    # train_data = cvt_data_axis(train_data)
+    N = len(train_data)
+
+    for batch_idx in range(N // bs):
+        # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
+        input_tensor = autoencoder_tensor(train_data, batch_idx, bs, args)
+
+        #     data = data[0]
+        #     data = Variable(torch.from_numpy(data)).float()
+        #
+        first_embedding, second_embedding, third_embedding, post_embedding = extract_embeddings(input_tensor)
+        embeds = [first_embedding, second_embedding, third_embedding]
+
+        for embed in embeds:
+            # Forwards
+            autoencoder.train_(embed, args)
+            # code = autoencoder.encode(embed)
+
+        #     if (i+1) % (len(prop_all)//100) == 0:
+        #         print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))
+        #     # else:
+        #     #     print("{}/{}".format(i+1, (len(prop_all)/1000)))
+        #
+    # print('epoch {} complete'.format(epoch+1))
+
+    # if args.leftovers:
+    #     # TODO : Refactor (low priority, but duplicated code)
+    #     leftover = N - bs*(N//bs)
+    #     if leftover > 0:
+    #         batch_idx = N // bs
+    #         input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
+    #         accuracy = model.train_(input_tensor, output_tensor, leftover, args)
+
+    return
+
+
+def extract_embeddings(input_feats):
+    """Extract embeddings from 1227 long input vector"""
+    INPUT_FEAT_LENGTH = 1227
+    HANDCRAFTED_FEATURES = 263
+    batch_size = input_feats.shape[0]
+
+    # input_feats = input_feats.view(NUM_FEATURES)
+
+    input_feats = input_feats[:, HANDCRAFTED_FEATURES:]
+
+    first_embedding = input_feats[:, :300]
+    second_embedding = input_feats[:, 300:600]
+    third_embedding = input_feats[:, 600:900]
+    post_embedding = input_feats[:, 900:]
+
+    embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
+
+    return embeddings
+
+
 def main():
     DEFAULT_BS = 64
     TOTAL_FEATURES = 1227
     NUM_HANDCRAFTED = 263
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
     USE_LEFTOVERS = True
+    USE_BCE = False
 
     # Change test set size here:
     test_size = 2000
 
-    # Change number of epochs here
-    DEFAULT_EPOCHS = 50
+    # Change number of epochs here:
+    DEFAULT_EPOCHS = 5
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
@@ -230,16 +310,36 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--resume', type=str,
                         help='resume from model stored')
-    parser.add_argument('--BCE', action='store_true', default=False,
+    parser.add_argument('--BCE', action='store_true', default=USE_BCE,
                         help='use Binary Cross Entropy loss function')
     parser.add_argument('--leftovers', action='store_true', default=USE_LEFTOVERS,
                         help='train on leftovers after mini-batches')
-    args = parser.parse_args()     
+    args = parser.parse_args()
+
+
+    """ 
+    Train the AutoEncoder
+    
+    The autoencoder will work on 300-length vectors: the user embedding, the source subreddit embedding,
+    and the target subreddit embedding. These can be treated as individual objects.
+    
+    Note that the post embeddings are already of length 64, hence they do not need to be passed through
+    the autoencoder.
+    """
+    autoEpochs = 2
+    autoencoder = SimpleAutoEncoder()
+    ae_bs = 64
+
+    print("~~~ Starting autoencoder training! ~~~")
+    # # TODO : After training autoencoder, encode all examples
+    for epoch in range(1, autoEpochs + 1):
+        print("Training autoencoder: epoch {}".format(epoch))
+        train_autoencoder(epoch, prop_train, autoencoder, ae_bs, args)
+
+    # Use the autoencoder to encode all the features
+
 
     """Prepare the Relational Network"""
-
-    # Toggle for debugging
-    # args.BCE = True
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     cuda = args.cuda
