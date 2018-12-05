@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
+import random
 
 
 class ConvInputModel(nn.Module):
@@ -42,9 +43,8 @@ class FCOutputModel(nn.Module):
 
         self.fc2 = nn.Linear(256, 256)
 
-        # Conflict = {True, False}
+        # Conflict = {True or False}
         N_CLASSES = 2
-
         self.fc3 = nn.Linear(256, N_CLASSES)
 
     def forward(self, x):
@@ -52,7 +52,7 @@ class FCOutputModel(nn.Module):
         x = F.relu(x)
         x = F.dropout(x)
         x = self.fc3(x)
-        return F.log_softmax(x)
+        return F.log_softmax(x, dim=0)
 
 
 class BasicModel(nn.Module):
@@ -60,39 +60,49 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.name = name
 
-    def train_(self, input_feats, label):
-        self.optimizer.zero_grad()
-        output = self(input_feats)
-        loss = F.nll_loss(output, label)
-        loss.backward()
-        self.optimizer.step()
-        pred = output.data.max(1)[1]
-        correct = pred.eq(label.data).cpu().sum()
-        accuracy = correct * 100. / len(label)
-        return accuracy
 
-    def naive_train_(self, input_feats, label):
+    def naive_guess(self, batch_size, input_feats):
+        """Stubbed for subclass to implement"""
+        probs = torch.empty(0, 0)
+        for i in range(batch_size):
+            guess = torch.empty(1, 2)
+            probconflict = random.uniform(0, 1)
+            probsafe = 1-probconflict
+            guess[0, 0] = probsafe
+            guess[0, 1] = probconflict
+            probs = torch.cat((probs, guess), 0)
+        return probs
+
+    def train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
-        output = self.naive_forward(input_feats)
+        # Run input batch across relational net
+        output = self.forward(input_feats, args)
+        # Calculate loss on this batch
         loss = F.nll_loss(output, label)
+        # loss = F.binary_cross_entropy(output, label)
+
+        # with torch.enable_grad(): # Enable gradient descent
+        #     loss.backward()
         loss.backward()
         self.optimizer.step()
+
+        # Get the actual argmax that indicates the label
         pred = output.data.max(1)[1]
+        # Compare against gold standard
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
         return accuracy
 
-    def naive_forward(self, input_feats):
-        """Stubbed for subclass to implement"""
-        return torch.empty(input_feats)
 
-    def test_(self, input_feats, label):
-        output = self(input_feats)
+    def test_(self, input_feats, label, args):
+        output = self.forward(input_feats, args)
         pred = output.data.max(1)[1]
+        # predictions are log probabilities, so convert back to actual probs
+        posClassProbs = torch.exp(output)[:, 1].detach().numpy()
         correct = pred.eq(label.data).cpu().sum()
         accuracy = correct * 100. / len(label)
-        return accuracy
+        return accuracy, posClassProbs
 
     def save_model(self, epoch):
         torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
@@ -116,9 +126,6 @@ NUM_FEATURES = 964
 class RN(BasicModel):
     def __init__(self, args):
         super(RN, self).__init__(args, 'RN')
-
-        # Let's assume we aren't needing a convolutional model
-        # self.conv = ConvInputModel()
         
         """nn.Linear(in_features, out_features, bias=True)
         in_features – size of each input sample
@@ -138,108 +145,12 @@ class RN(BasicModel):
 
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
 
-
-    # def forward(self, input_feats):
-    #     x = input_feats  #
-    #
-    #     # THESE NUMBERS ARE MADE UP!
-    #
-    #     USER_FEATS_START = 0
-    #     USER_FEATS_END = 200
-    #     SOURCE_FEATS_END = USER_FEATS_END + 200
-    #     TARGET_FEATS_END = SOURCE_FEATS_END + 200
-    #     # POST_FEATS_END = TARGET_FEATS_END + 364
-    #
-    #
-    #     xUser = x[:, :USER_FEATS_END]
-    #     xSource = x[:, USER_FEATS_END : SOURCE_FEATS_END]
-    #     xTarget = x[:, SOURCE_FEATS_END : TARGET_FEATS_END]
-    #     xPost = x[:, TARGET_FEATS_END:]
-    #
-    #     X = xUser
-    #     k = OBJ_LENGTH
-    #
-    #     # X_mean = torch.mean(X, 0)
-    #     # X = X - X_mean.expand_as(X)
-    #     # U, S, V = torch.svd(torch.t(X))
-    #     # C = torch.mm(X, U[:, :k])
-    #
-    #
-    #
-    #     x = torch.cat([xUser[:OBJ_LENGTH], xSource[:OBJ_LENGTH], xTarget[:OBJ_LENGTH], xPost[:OBJ_LENGTH]])
-    #
-    #
-    #
-    #
-    #
-    #     # We need to convert x into a mb * (64+64+64+64) vector
-    #
-    #
-    #     """g"""
-    #     # Minibatch size
-    #     mb = x.size()[0]
-    #
-    #     # Dimension of the image (does not apply to our code)
-    #     d = x.size()[1]
-    #     # x_flat = (64 x 25 x 24)
-    #
-    #     # Goes from (64, 24, 5, 5) to (64, 5^2, 24) shapewise
-    #     # x_flat = x.view(mb, n_channels, d * d).permute(0, 2, 1)
-    #
-    #     # For us, let's just keep it as is
-    #     x_flat = x.view(mb,d,1)
-    #
-    #
-    #     # add coordinates
-    #     # (64, 25, 24) -> (64, 25, 26)
-    #     x_flat = torch.cat([x_flat, self.coord_tensor], 2)
-    #
-    #     # x_flat is now: (64, 1227, 1+2)
-    #
-    #     # cast all pairs against each other
-    #     x_i = torch.unsqueeze(x_flat, 1)  # (64x1x25x26+11)
-    #     x_i = x_i.repeat(1, NUM_FEATURES, 1, 1)  # (64x25x25x26+11)
-    #
-    #     x_j = torch.unsqueeze(x_flat, 2)  # (64x25x1x26+11)
-    #     # x_j = torch.cat([x_j, qst], 3)
-    #     x_j = x_j.repeat(1, 1, NUM_FEATURES, 1)  # (64x25x25x26+11)
-    #
-    #     # concatenate all together
-    #     x_full = torch.cat([x_i, x_j], 3)  # (64x25x25x2*26+11)
-    #
-    #     # reshape for passing through network
-    #
-    #     # FC = fully connected layer
-    #     # relu = relu activation function
-    #
-    #     # Once we finally get our data into a good format, we can pass it into the first hidden layer.
-    #     # We can also try other activation functions
-    #     x_ = x_full.view(mb * NUM_FEATURES * NUM_FEATURES, 6)
-    #     x_ = self.g_fc1(x_)
-    #     x_ = F.relu(x_)
-    #     x_ = self.g_fc2(x_)
-    #     x_ = F.relu(x_)
-    #     x_ = self.g_fc3(x_)
-    #     x_ = F.relu(x_)
-    #     x_ = self.g_fc4(x_)
-    #     x_ = F.relu(x_)
-    #
-    #     # reshape again and sum over all the so-called "object pairs"
-    #     x_g = x_.view(mb, NUM_FEATURES * NUM_FEATURES, 256)
-    #     x_g = x_g.sum(1).squeeze()
-    #
-    #     """f"""
-    #     x_f = self.f_fc1(x_g)
-    #     x_f = F.relu(x_f)
-    #
-    #     return self.fcout(x_f)
-
-    def naive_forward(self, input_feats):
-        """non-torch approach to training"""
-        mb = input_feats.shape[0]
-
+    def forward(self, input_feats, args):
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
             input_feats)
+
+        # Save ourselves an argument and make it failsafe
+        batch_size = input_feats.shape[0]
 
         POSSIBLE_PAIRINGS = 6
         
@@ -252,9 +163,50 @@ class RN(BasicModel):
         second_post = torch.cat([second_embedding, post_embedding], dim=1)
         third_post = torch.cat([third_embedding, post_embedding], dim=1)
 
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+
+        # Hold inputs to g
+        # g_input = torch.empty(POSSIBLE_PAIRINGS * batch_size, 2 *
+        #                       OBJ_LENGTH, dtype=torch.float, device=device)
+        #
+        # g_output = torch.zeros(batch_size, HIDDEN_LAYER_UNITS,
+        #                        dtype=torch.float, device=device)
+
+        # g_inputs = []
+        # g_inputs.extend([first_second, first_third, first_post, second_third, second_post, third_post])
+        #
+        # # Just make the indices general to batch sizes
+        # batch_indices = []
+        # for i in range(batch_size + 1):
+        #     batch_indices.append(i * batch_size)
+        #
+        # g_input[batch_indices[0]:batch_indices[1], :] = first_second
+        # g_input[batch_indices[1]:batch_indices[2], :] = first_third
+        # g_input[batch_indices[2]:batch_indices[3], :] = first_post
+        # g_input[batch_indices[3]:batch_indices[4], :] = second_third
+        # g_input[batch_indices[4]:batch_indices[5], :] = second_post
+        # g_input[batch_indices[5]:batch_indices[6], :] = third_post
+        #
+        # """g"""
+        # for i in range(POSSIBLE_PAIRINGS):
+        #     x_ = self.g_fc1(g_input[batch_indices[i]:batch_indices[i + 1], :].float())
+        #     x_ = F.relu(x_)
+        #     x_ = self.g_fc2(x_)
+        #     x_ = F.relu(x_)
+        #     x_ = self.g_fc3(x_)
+        #     x_ = F.relu(x_)
+        #     x_ = self.g_fc4(x_)
+        #     x_ = F.relu(x_)
+        #     g_output = g_output + x_  # Sum output pairings element-wise DP style
+
+
+
         # Hold inputs to g
         # g_input should be a  6 * mb * 128 tensor (since there are 6 of mb*128 tensors)
-        g_input = torch.empty(POSSIBLE_PAIRINGS, mb, 2 *
+        g_input = torch.empty(POSSIBLE_PAIRINGS, batch_size, 2 *
                               OBJ_LENGTH, dtype=torch.float)
 
         g_input[0, :, :] = first_second
@@ -268,12 +220,10 @@ class RN(BasicModel):
         g_input = g_input.permute(1, 0, 2)
 
         # now reshape
-        g_input = g_input.contiguous().view(mb*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
+        g_input = g_input.contiguous().view(batch_size*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
 
         # Hold outputs of g
         # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
-        # =======================================================
-        # TODO : Change the code below to account for this!
 
         x_ = g_input
         x_ = self.g_fc1(x_)
@@ -285,31 +235,34 @@ class RN(BasicModel):
         x_ = self.g_fc4(x_)
         x_ = F.relu(x_)
 
-        g_output = x_.view(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS)
+        g_output = x_.view(batch_size, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS)
         # g_output = torch.empty(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
-        
-        """g"""
-        # for i in range(POSSIBLE_PAIRINGS):
-        #     x_ = self.g_fc1(g_input[i,:])
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc2(x_)
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc3(x_)
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc4(x_)
-        #     x_ = F.relu(x_)
-        #     g_output[i,:] = x_
+
         
         # Sum output pairings elementwise
-        # f_input has size: mb x 256 (since we sum along the possible pairings
+        # f_input has size: mb x 256 (since we sum along the possible pairings)
         f_input = g_output.sum(1).squeeze()
+
+
+        # Just for readability
+        # f_input = g_output
+        # print(f_input.shape)
+
+        # reshape again and sum over all the so-called "object pairs"
+        # x_g = x_.view(batch_size, NUM_FEATURES * NUM_FEATURES, 256)
+        # x_g = x_g.sum(1).squeeze()
+
+        # """f"""
+        # x_f = self.f_fc1(x_g)
+        # x_f = F.relu(x_f)
+
 
         """f"""
         x_f = self.f_fc1(f_input)
         x_f = F.relu(x_f)
 
+        # Each example gets two values (a LOG probability for False, and a LOG probability for True)
         output = self.fcout(x_f)
-        # =======================================================
 
         return output
 
@@ -317,18 +270,22 @@ class RN(BasicModel):
     def extract_embeddings(self, input_feats):
         """Extract embeddings from 1227 long input vector"""
 
-        # INPUT_FEAT_LENGTH = 1227
-        # HANDCRAFTED_FEATURES = 263
+        INPUT_FEAT_LENGTH = 1227
+        HANDCRAFTED_FEATURES = 263
+        numExamples = input_feats.shape[0]
 
         # input_feats = input_feats.view(NUM_FEATURES)
 
-        # input_feats = input_feats[:, HANDCRAFTED_FEATURES:].view(
-        #     INPUT_FEAT_LENGTH - HANDCRAFTED_FEATURES)  # remove features and flatten
+        input_feats = input_feats[:, HANDCRAFTED_FEATURES:].view(
+            numExamples, NUM_FEATURES)  # remove features and flatten
         
         first_embedding = input_feats[:, :300]
         second_embedding = input_feats[:, 300:600]
         third_embedding = input_feats[:, 600:900]
         post_embedding = input_feats[:, 900:]
+
+
+        # Todo: Implement autoencoder or other dim-reduction technique
 
         # For now, just take the first 64
         first_embedding = first_embedding[:, :OBJ_LENGTH]
@@ -336,33 +293,4 @@ class RN(BasicModel):
         third_embedding = third_embedding[:, :OBJ_LENGTH]
         post_embedding = post_embedding[:, :OBJ_LENGTH]
 
-        # Todo: Implement autoencoder or other dim-reduction technique
-
         return first_embedding, second_embedding, third_embedding, post_embedding
-
-
-
-class CNN_MLP(BasicModel):
-    def __init__(self, args):
-        super(CNN_MLP, self).__init__(args, 'CNNMLP')
-
-        self.conv = ConvInputModel()
-        self.fc1 = nn.Linear(5 * 5 * 24 + 11, 256)  # question concatenated to all
-        self.fcout = FCOutputModel()
-
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
-        # print([ a for a in self.parameters() ] )
-
-    def forward(self, img, qst):
-        x = self.conv(img)  ## x = (64 x 24 x 5 x 5)
-
-        """fully connected layers"""
-        x = x.view(x.size(0), -1)
-
-        x_ = torch.cat((x, qst), 1)  # Concat question
-
-        x_ = self.fc1(x_)
-        x_ = F.relu(x_)
-
-        return self.fcout(x_)
-
