@@ -40,10 +40,7 @@ class ConvInputModel(nn.Module):
 class FCOutputModel(nn.Module):
     def __init__(self):
         super(FCOutputModel, self).__init__()
-
         self.fc2 = nn.Linear(256, 256)
-        # Our label needs to match to 10 if we leave fc3 as is
-        # Changing it to 1 will not work
         self.fc3 = nn.Linear(256, 2)
 
     def forward(self, x):
@@ -52,6 +49,19 @@ class FCOutputModel(nn.Module):
         x = F.dropout(x)
         x = self.fc3(x)
         return F.log_softmax(x, dim=0)
+
+class FCOutputModelBCE(nn.Module):
+    def __init__(self):
+        super(FCOutputModelBCE, self).__init__()
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 1)
+
+    def forward(self, x):
+        x = self.fc2(x)
+        x = F.relu(x)
+        x = F.dropout(x)
+        x = self.fc3(x)
+        return F.sigmoid(x)
 
 
 class BasicModel(nn.Module):
@@ -88,25 +98,48 @@ class BasicModel(nn.Module):
         # Run input batch across relational net
         output = self.naive_forward(input_feats, args)
         # Calculate loss on this batch
-        loss = F.nll_loss(output, label)
-        # loss = F.binary_cross_entropy(output, label)
+        if not args.BCE:
+            loss = F.nll_loss(output, label)
+        else:
+            loss = F.binary_cross_entropy(output.view(batch_size), label.float())
 
         with torch.enable_grad(): # Enable gradient descent
             loss.backward()
         self.optimizer.step()
 
         # Get the actual argmax that indicates the label
-        pred = output.data.max(1)[1]
+        if not args.BCE:
+            pred = output.data.max(1)[1]
+        else:
+            pred = output.view(output.shape[0]).round()
+
         # Compare against gold standard
-        correct = pred.eq(label.data).cpu().sum()
+        if not args.BCE:
+            correct = pred.eq(label.data).cpu().sum()
+        else:
+            correct = pred.eq(label.data.float()).cpu().sum()
+
         accuracy = correct * 100. / len(label)
         return accuracy
 
     def test_(self, input_feats, label, args):
         output = self.naive_forward(input_feats, args)
-        pred = output.data.max(1)[1]
-        correct = pred.eq(label.data).cpu().sum()
+        # pred = output.data.max(1)[1]
+
+        # Get the actual argmax that indicates the label
+        if not args.BCE:
+            pred = output.data.max(1)[1]
+        else:
+            pred = output.view(output.shape[0]).round()
+
+        # Compare against gold standard
+        if not args.BCE:
+            correct = pred.eq(label.data).cpu().sum()
+        else:
+            correct = pred.eq(label.data.float()).cpu().sum()
+
         accuracy = correct * 100. / len(label)
+
         return accuracy
 
     def save_model(self, epoch):
@@ -174,7 +207,10 @@ class RN(BasicModel):
         #     np_coord_tensor[:, i, :] = np.array(cvt_coord(i))
         # self.coord_tensor.data.copy_(torch.from_numpy(np_coord_tensor))
 
-        self.fcout = FCOutputModel()
+        if not args.BCE:
+            self.fcout = FCOutputModel()
+        else:
+            self.fcout = FCOutputModelBCE()
 
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
 

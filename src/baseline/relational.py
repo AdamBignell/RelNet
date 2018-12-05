@@ -192,10 +192,14 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--resume', type=str,
                         help='resume from model stored')
+    parser.add_argument('--BCE', action='store_true', default=False,
+                        help='use Binary Cross Entropy loss function')
     args = parser.parse_args()     
 
-    # Prepare the Relational Network
-    
+    """Prepare the Relational Network"""
+
+    # Toggle for debugging
+    # args.BCE = True
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
     torch.manual_seed(args.seed)
@@ -218,8 +222,8 @@ def main():
 
     # CHANGE THIS TO 1227 when doing the full analysis
     NUM_FEATURES = 1227
-    input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
-    output_tensor = torch.LongTensor(bs)
+    # input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
+    # output_tensor = torch.LongTensor(bs)
 
     if args.cuda:
         model.cuda()
