@@ -79,10 +79,8 @@ def tensor_data(data, i, bs, args, leftover=False):
     input_tensor.data.resize_(input_tensor.size()).copy_(input_tensor)
     output_tensor.data.resize_(output_tensor.size()).copy_(output_tensor)
 
-
     input_tensor = input_tensor.to(device)
     output_tensor = output_tensor.to(device)
-
 
     return input_tensor, output_tensor
 
@@ -121,6 +119,7 @@ def train(epoch, train_data, model, bs, args):
             accuracy = model.train_(input_tensor, output_tensor, leftover, args)
 
     return
+
 
 def test(epoch, test_data, model, bs, args):
     model.eval()
@@ -173,12 +172,13 @@ def main():
     NUM_HANDCRAFTED = 263
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
     USE_LEFTOVERS = True
+    USE_BCE = False
 
     # Change test set size here:
     test_size = 2000
 
-    # Change number of epochs here
-    DEFAULT_EPOCHS = 50
+    # Change number of epochs here:
+    DEFAULT_EPOCHS = 5
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
@@ -230,7 +230,7 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--resume', type=str,
                         help='resume from model stored')
-    parser.add_argument('--BCE', action='store_true', default=False,
+    parser.add_argument('--BCE', action='store_true', default=USE_BCE,
                         help='use Binary Cross Entropy loss function')
     parser.add_argument('--leftovers', action='store_true', default=USE_LEFTOVERS,
                         help='train on leftovers after mini-batches')

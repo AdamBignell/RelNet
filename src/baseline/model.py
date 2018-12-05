@@ -148,6 +148,7 @@ Log-interval:   10
 OBJ_LENGTH = 64
 HIDDEN_LAYER_UNITS = 256
 NUM_FEATURES = 964
+REG_PARAM = 0.00001
 
 class RN(BasicModel):
     def __init__(self, args):
@@ -172,33 +173,7 @@ class RN(BasicModel):
         else:
             self.fcout = FCOutputModelBCE()
 
-        # # Coordinates for objects i and j
-        # self.coord_oi = torch.FloatTensor(args.batch_size, 2)
-        # self.coord_oj = torch.FloatTensor(args.batch_size, 2)
-        # if args.cuda:
-        #     self.coord_oi = self.coord_oi.cuda()
-        #     self.coord_oj = self.coord_oj.cuda()
-        # self.coord_oi = Variable(self.coord_oi)
-        # self.coord_oj = Variable(self.coord_oj)
-
-        # # prepare coord tensor
-        # def cvt_coord(i):
-        #     return [(i / 5 - 2) / 2., (i % 5 - 2) / 2.]
-
-        # self.coord_tensor = torch.FloatTensor(args.batch_size, NUM_FEATURES, 2)
-
-        # if args.cuda:
-        #     self.coord_tensor = self.coord_tensor.cuda()
-        # self.coord_tensor = Variable(self.coord_tensor)
-
-        # np_coord_tensor = np.zeros((args.batch_size, NUM_FEATURES, 2))
-
-        # for i in range(NUM_FEATURES):
-        #     np_coord_tensor[:, i, :] = np.array(cvt_coord(i))
-        # self.coord_tensor.data.copy_(torch.from_numpy(np_coord_tensor))
-
-
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr)
+        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=REG_PARAM)
 
     def forward(self, input_feats, args):
         first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
@@ -222,42 +197,6 @@ class RN(BasicModel):
             device = torch.device('cuda')
         else:
             device = torch.device('cpu')
-
-        # Hold inputs to g
-        # g_input = torch.empty(POSSIBLE_PAIRINGS * batch_size, 2 *
-        #                       OBJ_LENGTH, dtype=torch.float, device=device)
-        #
-        # g_output = torch.zeros(batch_size, HIDDEN_LAYER_UNITS,
-        #                        dtype=torch.float, device=device)
-
-        # g_inputs = []
-        # g_inputs.extend([first_second, first_third, first_post, second_third, second_post, third_post])
-        #
-        # # Just make the indices general to batch sizes
-        # batch_indices = []
-        # for i in range(batch_size + 1):
-        #     batch_indices.append(i * batch_size)
-        #
-        # g_input[batch_indices[0]:batch_indices[1], :] = first_second
-        # g_input[batch_indices[1]:batch_indices[2], :] = first_third
-        # g_input[batch_indices[2]:batch_indices[3], :] = first_post
-        # g_input[batch_indices[3]:batch_indices[4], :] = second_third
-        # g_input[batch_indices[4]:batch_indices[5], :] = second_post
-        # g_input[batch_indices[5]:batch_indices[6], :] = third_post
-        #
-        # """g"""
-        # for i in range(POSSIBLE_PAIRINGS):
-        #     x_ = self.g_fc1(g_input[batch_indices[i]:batch_indices[i + 1], :].float())
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc2(x_)
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc3(x_)
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc4(x_)
-        #     x_ = F.relu(x_)
-        #     g_output = g_output + x_  # Sum output pairings element-wise DP style
-
-
 
         # Hold inputs to g
         # g_input should be a  6 * mb * 128 tensor (since there are 6 of mb*128 tensors)
@@ -293,24 +232,9 @@ class RN(BasicModel):
         g_output = x_.view(batch_size, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS)
         # g_output = torch.empty(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
 
-        
         # Sum output pairings elementwise
         # f_input has size: mb x 256 (since we sum along the possible pairings)
         f_input = g_output.sum(1).squeeze()
-
-
-        # Just for readability
-        # f_input = g_output
-        # print(f_input.shape)
-
-        # reshape again and sum over all the so-called "object pairs"
-        # x_g = x_.view(batch_size, NUM_FEATURES * NUM_FEATURES, 256)
-        # x_g = x_g.sum(1).squeeze()
-
-        # """f"""
-        # x_f = self.f_fc1(x_g)
-        # x_f = F.relu(x_f)
-
 
         """f"""
         x_f = self.f_fc1(f_input)
@@ -346,29 +270,7 @@ class RN(BasicModel):
         post_embedding = post_embedding[:, :OBJ_LENGTH]
 
         embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
-        # pca_embeds = []
-        # K = 64
-        # from sklearn.decomposition import PCA
-        # pca = PCA(n_components=K)
-        #
-        # for i, emb in enumerate(embeddings):
-        #     emb_trans = torch.tensor(pca.fit_transform(emb.numpy()))
-        #
-        #     # X = emb
-        #     # mean = torch.mean(X, 1, keepdim=True)
-        #     # X = X - mean.expand(-1, emb.shape[1])
-        #     #
-        #     # U, S, V = torch.svd(torch.t(X))
-        #     # pca_emb = torch.mm(X, U[:, :K])
-        #     #
-        #     # pca_embeds.append(pca_emb)
-        #     pca_embeds.append(emb_trans)
 
         # Todo: Implement autoencoder
 
-
         return embeddings
-
-# def unsup.pacov(x):
-#     mean = torch.mean(x, 1)
-#     xm = x - mean.expand(x)
