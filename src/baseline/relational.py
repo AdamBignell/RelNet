@@ -11,7 +11,7 @@ import pickle
 import random
 import torch
 from torch.autograd import Variable
-from model import RN, CNN_MLP
+from model import RN
 
 
 def loadTrainDev(rootDirectory, labels=False):
@@ -48,13 +48,35 @@ def loadDevData(rootDirectory, labels=False):
     test_dev = loadTestDev(rootDirectory, labels)
     return train_dev, val_dev, test_dev
 
+def loadConflictData(rootDirectory):
+    """Loads specifically connections marked as a conflict"""
+    x = np.load(open(rootDirectory + "conflict_dev.npy", 'rb'))
+    y = np.load(open(rootDirectory + "conflict_Y_dev.npy", 'rb'))
+    ids = open(rootDirectory + "conflictIDs_dev.txt", 'r').readlines()
+    return x, y, ids
 
-def tensor_data(data, i, bs):
+def loadNonconflictData(rootDirectory):
+    """Loads specifically connections marked as a non-conflict"""
+    x = np.load(open(rootDirectory + "nonconflict_dev.npy", 'rb'))
+    y = np.load(open(rootDirectory + "nonconflict_Y_dev.npy", 'rb'))
+    ids = open(rootDirectory + "nonconflictIDs_dev.txt", 'r').readlines()
+    return x, y, ids
+
+def tensor_data(data, i, bs, args):
+    if not args.no_cuda and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
     input_data = torch.from_numpy(np.asarray(data[0][bs*i:bs*(i+1)]))
     output_data = torch.from_numpy(np.asarray(data[1][bs*i:bs*(i+1)]))
 
+    input_data = input_data.to(device)
+    output_data = output_data.to(device)
+    
     input_data.data.resize_(input_data.size()).copy_(input_data)
     output_data.data.resize_(output_data.size()).copy_(output_data)
+    return input_data, output_data
 
     return input_data, output_data
 
@@ -65,43 +87,48 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
     
-def train(epoch, train_data, model, input_tensor, output_tensor, bs, args):
+
+
+
+def train(epoch, train_data, model, bs, args):
     model.train()
 
     # Uncomment this later to shuffle
     random.shuffle(train_data)
 
-    # rel[0]: input
-    # rel[1]: output
-    rel = cvt_data_axis(train_data)
+    train_data = cvt_data_axis(train_data)
+    N = len(train_data[0])
 
-    for batch_idx in range(len(rel[0]) // bs):
-        input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
-        accuracy_rel = model.train_(input_tensor, output_tensor)
-        #
-        # if batch_idx % args.log_interval == 0:
-        #     print('Train Epoch: {} [{}/{} ({:.0f}%)] Relations accuracy: {:.0f}% '.format(epoch, batch_idx * bs * 2, len(rel[0]) * 2, \
-        #                                                                                                                    100. * batch_idx * bs/ len(rel[0]), accuracy_rel))
-            
+    for batch_idx in range(N // bs):
+        # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
+        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
 
-def test(epoch, rel, model, input_tensor, output_tensor, bs, args):
+        accuracy = model.train_(input_tensor, output_tensor, bs, args)
+
+        if batch_idx % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)] Conflict Accuracy: {:.0f}% '.format(
+                epoch, batch_idx * bs, N, accuracy, 100))
+
+
+def test(epoch, test_data, model, bs, args):
     model.eval()
 
-    rel = cvt_data_axis(rel)
+    test_data = cvt_data_axis(test_data)
+    N = len(test_data[0])
 
-    allLabels = rel[1]
+    allLabels = test_data[1]
     allPredProbs = []
 
-    accuracy_rels = []
+    accuracy = []
 
-    for batch_idx in range(len(rel[0]) // bs):
-        input_tensor, output_tensor = tensor_data(rel, batch_idx, bs)
-        acc, predPos = model.test_(input_tensor, output_tensor)
+    for batch_idx in range(N // bs):
+        input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
+        acc, predPos = model.test_(input_tensor, output_tensor, args)
 
         # Compare labels (output_tensor) to input_tensor0
         # fpr, tpr, _ = roc_curve(output_tensor, pred)
 
-        accuracy_rels.append(acc)
+        accuracy.append(acc)
         allPredProbs.extend(predPos.tolist())
 
     from sklearn.metrics import roc_auc_score
@@ -111,10 +138,8 @@ def test(epoch, rel, model, input_tensor, output_tensor, bs, args):
 
     print(auc)
 
-    accuracy_rel = sum(accuracy_rels) / len(accuracy_rels)
-    print('\n Test set: Relation accuracy: {:.0f}% \n'.format(
-        accuracy_rel))
-
+    accuracy = sum(accuracy) / len(accuracy)
+    print('\n Test set: Conflict Accuracy: {:.0f}%\n'.format(accuracy))
 
 
 def main():
@@ -124,40 +149,56 @@ def main():
     DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 
     print("Loading dev data...")
-    trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
-    trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
-    NUM_HANDCRAFTED = 263
+    # trainXDev, valXDev, testXDev = loadDevData(DEV_DIR)
+    # trainYDev, valYDev, testYDev = loadDevData(DEV_DIR, labels=True)
 
-    # Remove the hand crafted features
-    trainXDev = trainXDev[:, NUM_HANDCRAFTED:]
-    trainYDev = trainYDev
-    valXDev = valXDev[:, NUM_HANDCRAFTED:]
-    valYDev = valYDev
-    testXDev = testXDev[:, NUM_HANDCRAFTED:]
-    testYDev = testYDev
-
-    # This is just a peace of mind check
-    print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
-    print("\tValX Size \t= ", valXDev.shape)          # (600, 1227)
-    print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227)
-    print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
-    print("\tValY Size \t= ", valYDev.shape)          # (600, )
-    print("\tTestY Size \t= ", testYDev.shape)        # (600, )
-
-    # ======== Relational Network Goes Below ============
-
-    DEFAULT_BS = 2 # change to 64
+    DEFAULT_BS = 64
     DEFAULT_EPOCHS = 5
+    TOTAL_FEATURES = 1227
+    NUM_HANDCRAFTED = 263
+    NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
+    test_size = 2000
+
+    # # This is just a peace of mind check
+    # print("\tTrainX Size \t= ", trainXDev.shape)      # (5000, 1227)
+    # print("\tValX Size \t= ", valXDev.shape)          # (600, 1227)
+    # print("\tTestX Size \t= ", testXDev.shape)        # (600, 1227)
+    # print("\tTrainY Size \t= ", trainYDev.shape)      # (5000, ) -> Just a vector
+    # print("\tValY Size \t= ", valYDev.shape)          # (600, )
+    # print("\tTestY Size \t= ", testYDev.shape)        # (600, )
+
+    # New version of the dev data, sorted by label
+    conX, conY, conIDs = loadConflictData(DEV_DIR)
+    print("\n\tConflict X Size \t= ", conX.shape)
+    print("\tConflict Y Size \t= ", conY.shape)
+    print("\tConflict IDs Size \t= ", len(conIDs))
+    print()
+
+    nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
+    print("\tNon-Conflict X Size \t= ", conX.shape)
+    print("\tNon-Conflict Y Size \t= ", conY.shape)
+    print("\tNon-Conflict IDs Size \t= ", len(conIDs))
+
+    allX = np.concatenate((conX, nonX), axis=0)
+    allY = np.concatenate((conY, nonY), axis=0)
+
+    # This is the version of the data with even representation
+    prop_all = []
+    for i in range(len(allX)):
+        prop_all.append((allX[i], allY[i][0]))
+    prop_all = np.array(prop_all)
+
+    np.random.shuffle(prop_all)
+    prop_test = prop_all[0:test_size]
+    prop_train = prop_all[test_size:]
 
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
-    parser.add_argument('--model', type=str, choices=['RN', 'CNN_MLP'], default='RN', 
+    parser.add_argument('--model', type=str, choices=['RN'], default='RN',
                         help='resume from model stored')
     parser.add_argument('--batch-size', type=int, default=DEFAULT_BS, metavar='N',
                         help='input batch size for training (default: 64)')
-
-                        # Attention MLAllStars: I changed 
     parser.add_argument('--epochs', type=int, default=DEFAULT_EPOCHS, metavar='N',
                         help='number of epochs to train (default: 1)')
     parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
@@ -172,59 +213,40 @@ def main():
                         help='resume from model stored')
     args = parser.parse_args()     
 
-    # Prepare the Relational Network
-    
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
     torch.manual_seed(args.seed)
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
-    if args.model=='CNN_MLP': 
-        model = CNN_MLP(args)
-    else:
-        model = RN(args)
+    # The relational network model itself
+    model = RN(args)
 
     bs = args.batch_size
 
-    TOTAL_FEATURES = 1227
-    NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
+    # input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
+    # output_tensor = torch.LongTensor(bs)
 
-    input_tensor = torch.FloatTensor(bs, NUM_FEATURES)
-    output_tensor = torch.LongTensor(bs)
+    # if args.cuda:
+    #     model.cuda()
+    #     input_tensor = input_tensor.cuda()
+    #     output_tensor = output_tensor.cuda()
+    #
+    # input_tensor = Variable(input_tensor)
+    # output_tensor = Variable(output_tensor)
 
-    if args.cuda:
-        model.cuda()
-        input_tensor = input_tensor.cuda()
-        output_tensor = output_tensor.cuda()
-
-    input_tensor = Variable(input_tensor)
-    output_tensor = Variable(output_tensor)
-
-    train_data = []
-    for i, tr in enumerate(trainXDev):
-        tup = (tr, trainYDev[i])
-        train_data.append(tup)
-    train_data = np.array(train_data)
-
-    test_data = []
-    for i, te in enumerate(testXDev):
-        tup = (te, testYDev[i])
-        test_data.append(tup)
-    test_data = np.array(test_data)
+    unique, counts = np.unique(allY, return_counts=True)
+    print("\nNumber of conflict/non-conflict:")
+    print(dict(zip(unique, counts)))
+    print("\nTraining...")
 
     for epoch in range(1, args.epochs + 1):
-        # train_data =
-        train(epoch, train_data, model, input_tensor, output_tensor, bs, args)
-        test(epoch, test_data, model, input_tensor, output_tensor, bs, args)
-        model.save_model(epoch)
+        train(epoch, prop_train, model, bs, args)
+        test(epoch, prop_test, model, bs, args)
 
+    print("Training complete!")
 
     return
-
-
-   
-
 
 
 if __name__ == "__main__":
