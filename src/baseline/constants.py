@@ -30,10 +30,12 @@ USER_IDS = DATA_HOME / "embeddings" / "user_vecs.vocab"
 SUBREDDIT_EMBEDS = DATA_HOME / "embeddings" / "sub_vecs.npy"
 SUBREDDIT_IDS = DATA_HOME / "embeddings" / "sub_vecs.vocab"
 
-POST_INFO = DATA_HOME / "detailed_data" / "post_crosslink_info.tsv"
+POST_INFO = DATA_HOME / "detailed_data" / "post_crosslinks_info.tsv"
 LABEL_INFO = DATA_HOME / "detailed_data" / "label_info.tsv"
 PREPROCESSED_DATA = DATA_HOME / "detailed_data" / "tokenized_posts.tsv"
 
+FULL_IDS = DATA_HOME / "detailed_data" / "full_ids.txt"
+FULL_EMBEDS = DATA_HOME / "detailed_data" / "full_embeds.npy"
 VOCAB_SIZE = 174558
 NUM_USERS = 118381
 NUM_SUBREDDITS = 51278
