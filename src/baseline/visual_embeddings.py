@@ -3,6 +3,7 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import constants
 import pandas as pd
+import random
 
 
 def get_burst_label_info():
@@ -82,8 +83,12 @@ def load_embeddings():
     ax.scatter(sub_embed[:, 0], sub_embed[:, 1], s=1)
 
     # draw line connections between subs
+    color = ["#" + ''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+             for i in range(10)]
     for index, row in data_pairs.iterrows():
-        ax.arrow(sub_embed[row['src']][0], sub_embed[row['src']][1], sub_embed[row['dst']][0] - sub_embed[row['src']][0], sub_embed[row['dst']][1] - sub_embed[row['src']][1], width=0.02, color='red', head_length=0.0,head_width=0.0)
+        ax.arrow(sub_embed[row['src']][0], sub_embed[row['src']][1], sub_embed[row['dst']][0] - sub_embed[row['src']][0],
+                 sub_embed[row['dst']][1] - sub_embed[row['src']][1],
+                 width=0.02, color=color[index % 10], head_length=0.2, head_width=0.3, capstyle='butt')
 
     # add labels to the plot
     for i, txt in enumerate(data_embed['src'].values):
