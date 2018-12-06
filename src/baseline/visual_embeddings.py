@@ -40,14 +40,15 @@ def create_sub_name_dict():
     return subs
 
 # convert the sub name to embedding index
-def sub_name_to_index(sub_names_dict, sub_sample, x):
+def sub_name_to_index(sub_names_dict, sub_sample, x, size, threshold):
     sub_id = sub_names_dict.get(x, None)
-    return sub_id if sub_id is not None and sub_id < sub_sample else None
+    return sub_id if sub_id is not None and sub_id < sub_sample and size >= threshold else None
 
 
 def load_embeddings():
 
-    sub_sample = 1000 # using all the subs takes too long
+    conflict_threshold = 3  # of of conflicts before connection is drawn
+    sub_sample = 300  # top n communities from the embeddings
     # sub reddit vectors
 
     # file with sub embedding
@@ -60,7 +61,7 @@ def load_embeddings():
 
     # get pairs of subs
     data_pairs = pd.DataFrame(sub_list, columns=['src', 'dst'])
-    data_pairs = data_pairs.groupby(['src', 'dst']).size().reset_index(name='Size')
+    data_pairs = data_pairs.groupby(['src', 'dst']).size().reset_index(name='size')
     reduced_vec = sub_vecs[:sub_sample, :]
     sub_embed = TSNE(n_components=2).fit_transform(reduced_vec)
 
@@ -69,8 +70,8 @@ def load_embeddings():
 
     sub_names_dict = dict(zip(sub_names, range(len(sub_names))))
 
-    data_pairs['src'] = data_pairs.apply(lambda row: sub_name_to_index(sub_names_dict, sub_sample, row['src']), axis=1)
-    data_pairs['dst'] = data_pairs.apply(lambda row: sub_name_to_index(sub_names_dict, sub_sample, row['dst']), axis=1)
+    data_pairs['src'] = data_pairs.apply(lambda row: sub_name_to_index(sub_names_dict, sub_sample, row['src'], row['size'], conflict_threshold), axis=1)
+    data_pairs['dst'] = data_pairs.apply(lambda row: sub_name_to_index(sub_names_dict, sub_sample, row['dst'], row['size'], conflict_threshold), axis=1)
     data_pairs = data_pairs.dropna() # remove unresolved sub ids
     data_pairs['src'] = data_pairs['src'].astype('int64')
     data_pairs['dst'] = data_pairs['dst'].astype('int64')
