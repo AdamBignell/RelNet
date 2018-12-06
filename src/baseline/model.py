@@ -99,10 +99,11 @@ class BasicModel(nn.Module):
             posClassProbs = output[:, 0].detach().numpy()
 
         accuracy = correct * 100. / len(label)
-        return accuracy, posClassProbs
 
-    def save_model(self, epoch):
-        torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+        return accuracy, posClassProbs, pred
+
+    def save_model(self, epoch, args):
+        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}.pth'.format('BCE' if args.BCE else 'NLL', epoch))
 
 
 

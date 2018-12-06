@@ -64,6 +64,11 @@ def loadNonconflictData(rootDirectory):
     ids = open(rootDirectory + "nonconflictIDs_dev.txt", 'r').readlines()
     return x, y, ids
 
+def loadFullData(rootDirectory):
+    """Loads the complete data set"""
+    full_embeds = np.load(open(rootDirectory + "/detailed_data/full_embeds.npy"))
+    return full_embeds
+
 
 def tensor_data(data, i, bs, args, leftover=False):
     if not args.no_cuda and torch.cuda.is_available():
@@ -181,7 +186,7 @@ def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
             input_tensor, output_tensor = tensor_data_encoded(test_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder)
         else:
             input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
-        acc, predPos = model.test_(input_tensor, output_tensor, args)
+        acc, predPos, pred = model.test_(input_tensor, output_tensor, args)
 
         # Compare labels (output_tensor) to input_tensor0
         # fpr, tpr, _ = roc_curve(output_tensor, pred)
@@ -201,7 +206,7 @@ def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
                                                                   user_autoencoder, sub_autoencoder, leftover=True)
             else:
                 input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
-            acc, predPos = model.test_(input_tensor, output_tensor, args)
+            acc, predPos, pred = model.test_(input_tensor, output_tensor, args)
 
             accuracy.append(acc)
             allPredProbs.extend(predPos.tolist())
@@ -215,7 +220,7 @@ def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
     print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
     print('AUC Score: {}'.format(auc))
 
-    return
+    return accuracy
 
 
 def train_autoencoder(epoch, train_data, user_autoencoder, sub_autoencoder, bs, args):
@@ -298,7 +303,7 @@ def main():
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
     USE_LEFTOVERS = True
     USE_BCE = False
-    USE_AUTOENCODERS = True
+    USE_AUTOENCODERS = False
 
     # Change test set size here:
     test_size = 2000
@@ -310,6 +315,7 @@ def main():
 
     # Set the below to whatever your machine uses
     DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
+    DATA_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 
     print("Loading dev data...")
 
@@ -421,15 +427,26 @@ def main():
     print("\nTraining...")
 
     N_FOLDS = 5
+    best_total_accuracy = 0
 
     for epoch in range(1, args.epochs + 1):
         # Split into training set and validation set
         kfold = KFold(n_splits = N_FOLDS)
+        total_accuracy = 0
         for train_idx, test_idx in kfold.split(prop_all):
             prop_train = prop_all[train_idx, :]
             prop_test = prop_all[test_idx, :]
             train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
-            test(epoch, prop_test, model, bs, args, user_autoencoder, sub_autoencoder)
+            total_accuracy += test(epoch, prop_test, model, bs,
+                               args, user_autoencoder, sub_autoencoder)
+        if total_accuracy > best_total_accuracy:
+            model.save_model(epoch, args)
+
+    # MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
+    # model.load_state_dict(torch.load(MODEL_DIR + 'NLL_epoch_01.pth'))
+    # model.load_state_dict(torch.load(MODEL_DIR + 'BCE_epoch_10.pth'))
+
+    # test(0, prop_all, model, bs, args, user_autoencoder, sub_autoencoder)
 
     print("Training complete!")
 
