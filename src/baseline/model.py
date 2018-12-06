@@ -121,6 +121,86 @@ HIDDEN_LAYER_UNITS = 256
 NUM_FEATURES = 964
 REG_PARAM = 0.00001
 
+
+class VariationalAutoEncoder(nn.Module):
+
+    def __init__(self):
+        super(VariationalAutoEncoder, self).__init__()
+
+        self.input_length = 300
+        # self.input_length = 2 * OBJ_LENGTH
+
+        self.fc1 = nn.Linear(300, 150)
+        self.fc21 = nn.Linear(150, 64)
+        self.fc22 = nn.Linear(150, 64)
+        self.fc3 = nn.Linear(64, 150)
+        self.fc4 = nn.Linear(150, 300)
+
+        self.criterion = nn.MSELoss()
+        self.learning_rate = 1e-3
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-3)
+        self.reconstruction_function = nn.MSELoss(size_average=False)
+
+
+    def encode(self, x):
+        h1 = F.relu(self.fc1(x))
+        return self.fc21(h1), self.fc22(h1)
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def loss_function(self, recon_x, x, mu, logvar):
+        BCE = self.reconstruction_function(recon_x, x)  # mse loss
+        # loss = 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        KLD_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+        KLD = torch.sum(KLD_element).mul_(-0.5)
+        # KL divergence
+        return BCE + KLD
+
+
+    def train_(self, embed, args):
+
+        self.optimizer.zero_grad()
+        recon_batch, mu, logvar = self.forward(embed, args)
+
+        loss = self.loss_function(recon_batch, embed, mu, logvar)
+        loss.backward()
+        # train_loss += loss.data[0]
+        self.optimizer.step()
+
+        return loss.data[0]
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        h3 = F.relu(self.fc3(z))
+        return F.sigmoid(self.fc4(h3))
+
+    def forward(self, x, args):
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+
+        mu, logvar = self.encode(x)
+        z = self.reparametrize(mu, logvar)
+        return self.decode(z), mu, logvar
+
+
+
 class SimpleAutoEncoder(nn.Module):
     def __init__(self):
         super(SimpleAutoEncoder, self).__init__()
@@ -151,7 +231,7 @@ class SimpleAutoEncoder(nn.Module):
         loss = self.criterion(output, embed)
         loss.backward()
         self.optimizer.step()
-        return
+        return loss.data[0]
 
     def forward(self, x, args):
         if not args.no_cuda and torch.cuda.is_available():
@@ -193,8 +273,12 @@ class RN(BasicModel):
 
 
     def forward(self, input_feats, args):
-        first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
-            input_feats)
+        if args.autoencoder:
+            first_embedding, second_embedding, third_embedding, post_embedding = \
+                input_feats[:, :64], input_feats[:, 64:128], input_feats[:, 128:192], input_feats[:, 192:]
+        else:
+            first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
+                input_feats)
 
         # Save ourselves an argument and make it failsafe
         batch_size = input_feats.shape[0]

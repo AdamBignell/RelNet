@@ -11,8 +11,10 @@ import pickle
 import random
 import torch
 from torch.autograd import Variable
-from model import RN, SimpleAutoEncoder
+from model import RN, SimpleAutoEncoder, VariationalAutoEncoder
 from sklearn.metrics import roc_auc_score
+
+from sklearn.model_selection import KFold
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -109,7 +111,26 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
 
-def train(epoch, train_data, model, bs, args):
+def tensor_data_encoded(train_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder, leftover=False):
+    input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover)
+
+    # Resize the input tensor
+    user_embedding, source_embedding, target_embedding, post_embedding = extract_embeddings(input_tensor)
+    # embeds = [first_embedding, second_embedding, third_embedding]
+    final_feats = []
+
+    final_feats.append(user_autoencoder.encode(user_embedding.float()))
+    final_feats.append(sub_autoencoder.encode(source_embedding.float()))
+    final_feats.append(sub_autoencoder.encode(target_embedding.float()))
+    final_feats.append(post_embedding.float())
+
+    # minibatch * 256 (64x4)
+    input_tensor = torch.cat(final_feats, 1)
+
+    return input_tensor, output_tensor
+
+
+def train(epoch, train_data, model, bs, args, user_autoencoder, sub_autoencoder):
     model.train()
 
     random.shuffle(train_data)
@@ -119,7 +140,10 @@ def train(epoch, train_data, model, bs, args):
 
     for batch_idx in range(N // bs):
         # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
-        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
+        if args.autoencoder:
+            input_tensor, output_tensor = tensor_data_encoded(train_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder)
+        else:
+            input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
 
         accuracy = model.train_(input_tensor, output_tensor, bs, args)
 
@@ -132,13 +156,17 @@ def train(epoch, train_data, model, bs, args):
         leftover = N - bs*(N//bs)
         if leftover > 0:
             batch_idx = N // bs
-            input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
+            if args.autoencoder:
+                input_tensor, output_tensor = tensor_data_encoded(train_data, batch_idx, bs, args, \
+                                                                  user_autoencoder, sub_autoencoder, leftover=True)
+            else:
+                input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
             accuracy = model.train_(input_tensor, output_tensor, leftover, args)
 
     return
 
 
-def test(epoch, test_data, model, bs, args):
+def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
     model.eval()
 
     test_data = cvt_data_axis(test_data)
@@ -149,7 +177,10 @@ def test(epoch, test_data, model, bs, args):
     accuracy = []
 
     for batch_idx in range(N // bs):
-        input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
+        if args.autoencoder:
+            input_tensor, output_tensor = tensor_data_encoded(test_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder)
+        else:
+            input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
         acc, predPos = model.test_(input_tensor, output_tensor, args)
 
         # Compare labels (output_tensor) to input_tensor0
@@ -165,7 +196,11 @@ def test(epoch, test_data, model, bs, args):
         leftover = N - bs*(N//bs)
         if leftover > 0:
             batch_idx = N // bs
-            input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args, leftover=True)
+            if args.autoencoder:
+                input_tensor, output_tensor = tensor_data_encoded(test_data, batch_idx, bs, args, \
+                                                                  user_autoencoder, sub_autoencoder, leftover=True)
+            else:
+                input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
             acc, predPos = model.test_(input_tensor, output_tensor, args)
 
             accuracy.append(acc)
@@ -183,10 +218,12 @@ def test(epoch, test_data, model, bs, args):
     return
 
 
-def train_autoencoder(epoch, train_data, autoencoder, bs, args):
-    autoencoder.train()
+def train_autoencoder(epoch, train_data, user_autoencoder, sub_autoencoder, bs, args):
+    user_autoencoder.train()
+    sub_autoencoder.train()
 
     train_data = train_data[:, 0]
+    # train_data = train_data[:, 0]
     random.shuffle(train_data)
     train_data = np.array(list(train_data[:][:]), dtype=np.float32)
 
@@ -200,13 +237,21 @@ def train_autoencoder(epoch, train_data, autoencoder, bs, args):
         #     data = data[0]
         #     data = Variable(torch.from_numpy(data)).float()
         #
-        first_embedding, second_embedding, third_embedding, post_embedding = extract_embeddings(input_tensor)
-        embeds = [first_embedding, second_embedding, third_embedding]
+        user_embedding, source_embedding, target_embedding, post_embedding = extract_embeddings(input_tensor)
 
-        for embed in embeds:
-            # Forwards
-            autoencoder.train_(embed, args)
+        loss1 = user_autoencoder.train_(user_embedding, args)
+        loss2 = sub_autoencoder.train_(source_embedding, args)
+        loss3 = sub_autoencoder.train_(target_embedding, args)
+
+        # if batch_idx % args.log_interval == 0:
+        #     print('Autoencoder training Epoch: {}, [{}/{} ({:.0f}%)] '.format(
+        #         epoch, batch_idx * bs, N, batch_idx*bs/N*100))
             # code = autoencoder.encode(embed)
+
+    print("User autoencoder loss:", loss1)
+    print("Source embedding loss:", loss2)
+    print("Target embedding loss:", loss3)
+    print("====================================")
 
         #     if (i+1) % (len(prop_all)//100) == 0:
         #         print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))
@@ -253,12 +298,13 @@ def main():
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
     USE_LEFTOVERS = True
     USE_BCE = False
+    USE_AUTOENCODERS = True
 
     # Change test set size here:
     test_size = 2000
 
     # Change number of epochs here:
-    DEFAULT_EPOCHS = 5
+    DEFAULT_EPOCHS = 10
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
@@ -314,6 +360,8 @@ def main():
                         help='use Binary Cross Entropy loss function')
     parser.add_argument('--leftovers', action='store_true', default=USE_LEFTOVERS,
                         help='train on leftovers after mini-batches')
+    parser.add_argument('--autoencoder', action='store_true', default=USE_AUTOENCODERS,
+                        help='train on leftovers after mini-batches')
     args = parser.parse_args()
 
 
@@ -326,18 +374,27 @@ def main():
     Note that the post embeddings are already of length 64, hence they do not need to be passed through
     the autoencoder.
     """
-    autoEpochs = 2
-    autoencoder = SimpleAutoEncoder()
-    ae_bs = 64
+    if args.autoencoder:
+        user_autoencoder = SimpleAutoEncoder()
+        sub_autoencoder = SimpleAutoEncoder()
+        user_autoencoder = VariationalAutoEncoder()
+        sub_autoencoder = VariationalAutoEncoder()
 
-    print("~~~ Starting autoencoder training! ~~~")
-    # # TODO : After training autoencoder, encode all examples
-    for epoch in range(1, autoEpochs + 1):
-        print("Training autoencoder: epoch {}".format(epoch))
-        train_autoencoder(epoch, prop_train, autoencoder, ae_bs, args)
+        if os.path.isfile('./user_autoencoder.pth'):
+            user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))
+            sub_autoencoder.load_state_dict(torch.load('./sub_autoencoder.pth'))
+        else:
+            autoEpochs = 10
+            ae_bs = 64
+            print("~~~ Starting autoencoder training! ~~~")
+            for epoch in range(1, autoEpochs + 1):
+                print("Training autoencoder: epoch {}".format(epoch))
+                train_autoencoder(epoch, prop_all, user_autoencoder, sub_autoencoder, ae_bs, args)
 
-    # Use the autoencoder to encode all the features
-
+            torch.save(user_autoencoder.state_dict(), './user_autoencoder.pth')
+            torch.save(sub_autoencoder.state_dict(), './sub_autoencoder.pth')
+    else:
+        user_autoencoder, sub_autoencoder = None, None
 
     """Prepare the Relational Network"""
 
@@ -359,11 +416,20 @@ def main():
     unique, counts = np.unique(allY, return_counts=True)
     print("\nNumber of conflict/non-conflict:")
     print(dict(zip(unique, counts)))
+
+
     print("\nTraining...")
 
+    N_FOLDS = 5
+
     for epoch in range(1, args.epochs + 1):
-        train(epoch, prop_train, model, bs, args)
-        test(epoch, prop_test, model, bs, args)
+        # Split into training set and validation set
+        kfold = KFold(n_splits = N_FOLDS)
+        for train_idx, test_idx in kfold.split(prop_all):
+            prop_train = prop_all[train_idx, :]
+            prop_test = prop_all[test_idx, :]
+            train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
+            test(epoch, prop_test, model, bs, args, user_autoencoder, sub_autoencoder)
 
     print("Training complete!")
 
