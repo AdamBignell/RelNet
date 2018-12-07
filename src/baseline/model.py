@@ -5,36 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import random
-
-
-class ConvInputModel(nn.Module):
-    def __init__(self):
-        super(ConvInputModel, self).__init__()
-
-        self.conv1 = nn.Conv2d(3, 24, 3, stride=2, padding=1)
-        self.batchNorm1 = nn.BatchNorm2d(24)
-        self.conv2 = nn.Conv2d(24, 24, 3, stride=2, padding=1)
-        self.batchNorm2 = nn.BatchNorm2d(24)
-        self.conv3 = nn.Conv2d(24, 24, 3, stride=2, padding=1)
-        self.batchNorm3 = nn.BatchNorm2d(24)
-        self.conv4 = nn.Conv2d(24, 24, 3, stride=2, padding=1)
-        self.batchNorm4 = nn.BatchNorm2d(24)
-
-    def forward(self, img):
-        """convolution"""
-        x = self.conv1(img)
-        x = F.relu(x)
-        x = self.batchNorm1(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = self.batchNorm2(x)
-        x = self.conv3(x)
-        x = F.relu(x)
-        x = self.batchNorm3(x)
-        x = self.conv4(x)
-        x = F.relu(x)
-        x = self.batchNorm4(x)
-        return x
+import os
 
 
 class FCOutputModel(nn.Module):
@@ -52,6 +23,7 @@ class FCOutputModel(nn.Module):
         x = F.dropout(x)
         x = self.fc3(x)
         return F.log_softmax(x, dim=0)
+
 
 class FCOutputModelBCE(nn.Module):
     def __init__(self):
@@ -72,18 +44,6 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.name = name
 
-    def naive_guess(self, batch_size, input_feats):
-        """Stubbed for subclass to implement"""
-        probs = torch.empty(0, 0)
-        for i in range(batch_size):
-            guess = torch.empty(1, 2)
-            probconflict = random.uniform(0, 1)
-            probsafe = 1-probconflict
-            guess[0, 0] = probsafe
-            guess[0, 1] = probconflict
-            probs = torch.cat((probs, guess), 0)
-        return probs
-
     def train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
@@ -96,8 +56,6 @@ class BasicModel(nn.Module):
         else:
             loss = F.binary_cross_entropy(output.view(batch_size), label.float())
 
-        # with torch.enable_grad(): # Enable gradient descent
-        #     loss.backward()
         loss.backward()
         self.optimizer.step()
 
@@ -130,8 +88,14 @@ class BasicModel(nn.Module):
         accuracy = correct * 100. / len(label)
         return accuracy, posClassProbs
 
-    def save_model(self, epoch):
-        torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+    # def save_model(self, epoch):
+    #     torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+        # return accuracy, posClassProbs, pred
+
+    def save_model(self, epoch, args):
+        if not os.path.isdir('model'):
+            os.mkdir('model')
+        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}.pth'.format('BCE' if args.BCE else 'NLL', epoch))
 
 
 
@@ -148,6 +112,132 @@ Log-interval:   10
 OBJ_LENGTH = 64
 HIDDEN_LAYER_UNITS = 256
 NUM_FEATURES = 964
+REG_PARAM = 0.00001
+
+
+class VariationalAutoEncoder(nn.Module):
+
+    def __init__(self):
+        super(VariationalAutoEncoder, self).__init__()
+
+        self.input_length = 300
+        # self.input_length = 2 * OBJ_LENGTH
+
+        self.fc1 = nn.Linear(300, 150)
+        self.fc21 = nn.Linear(150, 64)
+        self.fc22 = nn.Linear(150, 64)
+        self.fc3 = nn.Linear(64, 150)
+        self.fc4 = nn.Linear(150, 300)
+
+        self.criterion = nn.MSELoss()
+        self.learning_rate = 1e-3
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-3)
+        self.reconstruction_function = nn.MSELoss(size_average=False)
+
+
+    def encode(self, x):
+        h1 = F.relu(self.fc1(x))
+        return self.fc21(h1), self.fc22(h1)
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def loss_function(self, recon_x, x, mu, logvar):
+        BCE = self.reconstruction_function(recon_x, x)  # mse loss
+        # loss = 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        KLD_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+        KLD = torch.sum(KLD_element).mul_(-0.5)
+        # KL divergence
+        return BCE + KLD
+
+
+    def train_(self, embed, args):
+
+        self.optimizer.zero_grad()
+        recon_batch, mu, logvar = self.forward(embed, args)
+
+        loss = self.loss_function(recon_batch, embed, mu, logvar)
+        loss.backward()
+        # train_loss += loss.data[0]
+        self.optimizer.step()
+
+        return loss.data[0]
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        h3 = F.relu(self.fc3(z))
+        return F.sigmoid(self.fc4(h3))
+
+    def forward(self, x, args):
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+
+        mu, logvar = self.encode(x)
+        z = self.reparametrize(mu, logvar)
+        return self.decode(z), mu, logvar
+
+
+
+class SimpleAutoEncoder(nn.Module):
+    def __init__(self):
+        super(SimpleAutoEncoder, self).__init__()
+        self.input_length = 300
+        # self.input_length = 2 * OBJ_LENGTH
+        self.encoder = nn.Sequential(
+            nn.Linear(self.input_length, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 128),
+            nn.ReLU(True),
+            nn.Linear(128, 64))
+
+        self.decoder = nn.Sequential(
+            nn.Linear(64, 128),
+            nn.ReLU(True),
+            nn.Linear(128, 256),
+            nn.ReLU(True),
+            nn.Linear(256, self.input_length),
+            nn.Tanh())
+
+        self.criterion = nn.MSELoss()
+        self.learning_rate = 1e-3
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+
+    def train_(self, embed, args):
+        self.optimizer.zero_grad()
+        output = self.forward(embed, args)
+        loss = self.criterion(output, embed)
+        loss.backward()
+        self.optimizer.step()
+        return loss.data[0]
+
+    def forward(self, x, args):
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def encode(self, x):
+        return self.encoder(x)
+
 
 class RN(BasicModel):
     def __init__(self, args):
@@ -172,37 +262,16 @@ class RN(BasicModel):
         else:
             self.fcout = FCOutputModelBCE()
 
-        # # Coordinates for objects i and j
-        # self.coord_oi = torch.FloatTensor(args.batch_size, 2)
-        # self.coord_oj = torch.FloatTensor(args.batch_size, 2)
-        # if args.cuda:
-        #     self.coord_oi = self.coord_oi.cuda()
-        #     self.coord_oj = self.coord_oj.cuda()
-        # self.coord_oi = Variable(self.coord_oi)
-        # self.coord_oj = Variable(self.coord_oj)
+        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=REG_PARAM)
 
-        # # prepare coord tensor
-        # def cvt_coord(i):
-        #     return [(i / 5 - 2) / 2., (i % 5 - 2) / 2.]
-
-        # self.coord_tensor = torch.FloatTensor(args.batch_size, NUM_FEATURES, 2)
-
-        # if args.cuda:
-        #     self.coord_tensor = self.coord_tensor.cuda()
-        # self.coord_tensor = Variable(self.coord_tensor)
-
-        # np_coord_tensor = np.zeros((args.batch_size, NUM_FEATURES, 2))
-
-        # for i in range(NUM_FEATURES):
-        #     np_coord_tensor[:, i, :] = np.array(cvt_coord(i))
-        # self.coord_tensor.data.copy_(torch.from_numpy(np_coord_tensor))
-
-
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=1e-5)
 
     def forward(self, input_feats, args):
-        first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
-            input_feats)
+        if args.autoencoder:
+            first_embedding, second_embedding, third_embedding, post_embedding = \
+                input_feats[:, :64], input_feats[:, 64:128], input_feats[:, 128:192], input_feats[:, 192:]
+        else:
+            first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
+                input_feats)
 
         # Save ourselves an argument and make it failsafe
         batch_size = input_feats.shape[0]
@@ -224,42 +293,6 @@ class RN(BasicModel):
             device = torch.device('cpu')
 
         # Hold inputs to g
-        # g_input = torch.empty(POSSIBLE_PAIRINGS * batch_size, 2 *
-        #                       OBJ_LENGTH, dtype=torch.float, device=device)
-        #
-        # g_output = torch.zeros(batch_size, HIDDEN_LAYER_UNITS,
-        #                        dtype=torch.float, device=device)
-
-        # g_inputs = []
-        # g_inputs.extend([first_second, first_third, first_post, second_third, second_post, third_post])
-        #
-        # # Just make the indices general to batch sizes
-        # batch_indices = []
-        # for i in range(batch_size + 1):
-        #     batch_indices.append(i * batch_size)
-        #
-        # g_input[batch_indices[0]:batch_indices[1], :] = first_second
-        # g_input[batch_indices[1]:batch_indices[2], :] = first_third
-        # g_input[batch_indices[2]:batch_indices[3], :] = first_post
-        # g_input[batch_indices[3]:batch_indices[4], :] = second_third
-        # g_input[batch_indices[4]:batch_indices[5], :] = second_post
-        # g_input[batch_indices[5]:batch_indices[6], :] = third_post
-        #
-        # """g"""
-        # for i in range(POSSIBLE_PAIRINGS):
-        #     x_ = self.g_fc1(g_input[batch_indices[i]:batch_indices[i + 1], :].float())
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc2(x_)
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc3(x_)
-        #     x_ = F.relu(x_)
-        #     x_ = self.g_fc4(x_)
-        #     x_ = F.relu(x_)
-        #     g_output = g_output + x_  # Sum output pairings element-wise DP style
-
-
-
-        # Hold inputs to g
         # g_input should be a  6 * mb * 128 tensor (since there are 6 of mb*128 tensors)
         g_input = torch.empty(POSSIBLE_PAIRINGS, batch_size, 2 *
                               OBJ_LENGTH, dtype=torch.float)
@@ -274,11 +307,8 @@ class RN(BasicModel):
         # now g_input is mb * 6 * 128, by swapping the first two rows
         g_input = g_input.permute(1, 0, 2)
 
-        # now reshape
+        # now reshape  (mb*6) x 128 =>
         g_input = g_input.contiguous().view(batch_size*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
-
-        # Hold outputs of g
-        # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
 
         x_ = g_input
         x_ = self.g_fc1(x_)
@@ -290,27 +320,14 @@ class RN(BasicModel):
         x_ = self.g_fc4(x_)
         x_ = F.relu(x_)
 
+        # Hold outputs of g
+        # g_output will have mb x 6 (possible pairs) x 256 (# nodes in hidden layer)
         g_output = x_.view(batch_size, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS)
         # g_output = torch.empty(mb, POSSIBLE_PAIRINGS, HIDDEN_LAYER_UNITS, dtype=torch.float)
 
-        
         # Sum output pairings elementwise
         # f_input has size: mb x 256 (since we sum along the possible pairings)
         f_input = g_output.sum(1).squeeze()
-
-
-        # Just for readability
-        # f_input = g_output
-        # print(f_input.shape)
-
-        # reshape again and sum over all the so-called "object pairs"
-        # x_g = x_.view(batch_size, NUM_FEATURES * NUM_FEATURES, 256)
-        # x_g = x_g.sum(1).squeeze()
-
-        # """f"""
-        # x_f = self.f_fc1(x_g)
-        # x_f = F.relu(x_f)
-
 
         """f"""
         x_f = self.f_fc1(f_input)
@@ -351,29 +368,5 @@ class RN(BasicModel):
         post_embedding = post_embedding[:, :OBJ_LENGTH]
 
         embeddings = [first_embedding, second_embedding, third_embedding, post_embedding]
-        # pca_embeds = []
-        # K = 64
-        # from sklearn.decomposition import PCA
-        # pca = PCA(n_components=K)
-        #
-        # for i, emb in enumerate(embeddings):
-        #     emb_trans = torch.tensor(pca.fit_transform(emb.numpy()))
-        #
-        #     # X = emb
-        #     # mean = torch.mean(X, 1, keepdim=True)
-        #     # X = X - mean.expand(-1, emb.shape[1])
-        #     #
-        #     # U, S, V = torch.svd(torch.t(X))
-        #     # pca_emb = torch.mm(X, U[:, :K])
-        #     #
-        #     # pca_embeds.append(pca_emb)
-        #     pca_embeds.append(emb_trans)
-
-        # Todo: Implement autoencoder
-
 
         return embeddings
-
-# def unsup.pacov(x):
-#     mean = torch.mean(x, 1)
-#     xm = x - mean.expand(x)
