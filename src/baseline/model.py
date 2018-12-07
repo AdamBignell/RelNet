@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import random
+import os
 
 
 class FCOutputModel(nn.Module):
@@ -43,18 +44,6 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.name = name
 
-    # def naive_guess(self, batch_size, input_feats):
-    #     """Stubbed for subclass to implement"""
-    #     probs = torch.empty(0, 0)
-    #     for i in range(batch_size):
-    #         guess = torch.empty(1, 2)
-    #         probconflict = random.uniform(0, 1)
-    #         probsafe = 1-probconflict
-    #         guess[0, 0] = probsafe
-    #         guess[0, 1] = probconflict
-    #         probs = torch.cat((probs, guess), 0)
-    #     return probs
-
     def train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
@@ -67,8 +56,6 @@ class BasicModel(nn.Module):
         else:
             loss = F.binary_cross_entropy(output.view(batch_size), label.float())
 
-        # with torch.enable_grad(): # Enable gradient descent
-        #     loss.backward()
         loss.backward()
         self.optimizer.step()
 
@@ -101,8 +88,14 @@ class BasicModel(nn.Module):
         accuracy = correct * 100. / len(label)
         return accuracy, posClassProbs
 
-    def save_model(self, epoch):
-        torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+    # def save_model(self, epoch):
+    #     torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+        # return accuracy, posClassProbs, pred
+
+    def save_model(self, epoch, args):
+        if not os.path.isdir('model'):
+            os.mkdir('model')
+        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}.pth'.format('BCE' if args.BCE else 'NLL', epoch))
 
 
 
@@ -120,6 +113,86 @@ OBJ_LENGTH = 64
 HIDDEN_LAYER_UNITS = 256
 NUM_FEATURES = 964
 REG_PARAM = 0.00001
+
+
+class VariationalAutoEncoder(nn.Module):
+
+    def __init__(self):
+        super(VariationalAutoEncoder, self).__init__()
+
+        self.input_length = 300
+        # self.input_length = 2 * OBJ_LENGTH
+
+        self.fc1 = nn.Linear(300, 150)
+        self.fc21 = nn.Linear(150, 64)
+        self.fc22 = nn.Linear(150, 64)
+        self.fc3 = nn.Linear(64, 150)
+        self.fc4 = nn.Linear(150, 300)
+
+        self.criterion = nn.MSELoss()
+        self.learning_rate = 1e-3
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-3)
+        self.reconstruction_function = nn.MSELoss(size_average=False)
+
+
+    def encode(self, x):
+        h1 = F.relu(self.fc1(x))
+        return self.fc21(h1), self.fc22(h1)
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def loss_function(self, recon_x, x, mu, logvar):
+        BCE = self.reconstruction_function(recon_x, x)  # mse loss
+        # loss = 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        KLD_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+        KLD = torch.sum(KLD_element).mul_(-0.5)
+        # KL divergence
+        return BCE + KLD
+
+
+    def train_(self, embed, args):
+
+        self.optimizer.zero_grad()
+        recon_batch, mu, logvar = self.forward(embed, args)
+
+        loss = self.loss_function(recon_batch, embed, mu, logvar)
+        loss.backward()
+        # train_loss += loss.data[0]
+        self.optimizer.step()
+
+        return loss.data[0]
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        h3 = F.relu(self.fc3(z))
+        return F.sigmoid(self.fc4(h3))
+
+    def forward(self, x, args):
+        if not args.no_cuda and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+
+        mu, logvar = self.encode(x)
+        z = self.reparametrize(mu, logvar)
+        return self.decode(z), mu, logvar
+
+
 
 class SimpleAutoEncoder(nn.Module):
     def __init__(self):
@@ -151,7 +224,7 @@ class SimpleAutoEncoder(nn.Module):
         loss = self.criterion(output, embed)
         loss.backward()
         self.optimizer.step()
-        return
+        return loss.data[0]
 
     def forward(self, x, args):
         if not args.no_cuda and torch.cuda.is_available():
@@ -193,8 +266,12 @@ class RN(BasicModel):
 
 
     def forward(self, input_feats, args):
-        first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
-            input_feats)
+        if args.autoencoder:
+            first_embedding, second_embedding, third_embedding, post_embedding = \
+                input_feats[:, :64], input_feats[:, 64:128], input_feats[:, 128:192], input_feats[:, 192:]
+        else:
+            first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
+                input_feats)
 
         # Save ourselves an argument and make it failsafe
         batch_size = input_feats.shape[0]

@@ -11,8 +11,10 @@ import pickle
 import random
 import torch
 from torch.autograd import Variable
-from model import RN, SimpleAutoEncoder
+from model import RN, SimpleAutoEncoder, VariationalAutoEncoder
 from sklearn.metrics import roc_auc_score
+import pandas as pd
+from sklearn.model_selection import KFold
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -109,17 +111,37 @@ def cvt_data_axis(data):
     return (input_data, output_data)
 
 
-def train(epoch, train_data, model, bs, args):
+def tensor_data_encoded(train_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder, leftover=False):
+    input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover)
+
+    # Resize the input tensor
+    user_embedding, source_embedding, target_embedding, post_embedding = extract_embeddings(input_tensor)
+    # embeds = [first_embedding, second_embedding, third_embedding]
+    final_feats = []
+
+    final_feats.append(user_autoencoder.encode(user_embedding.float()))
+    final_feats.append(sub_autoencoder.encode(source_embedding.float()))
+    final_feats.append(sub_autoencoder.encode(target_embedding.float()))
+    final_feats.append(post_embedding.float())
+
+    # minibatch * 256 (64x4)
+    input_tensor = torch.cat(final_feats, 1)
+
+    return input_tensor, output_tensor
+
+
+def train(epoch, train_data, model, bs, args, user_autoencoder, sub_autoencoder):
     model.train()
-
     random.shuffle(train_data)
-
     train_data = cvt_data_axis(train_data)
     N = len(train_data[0])
 
     for batch_idx in range(N // bs):
         # train data is a list of tuples where the first entry in the tuple is the X values and the second entry is the label Y
-        input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
+        if args.autoencoder:
+            input_tensor, output_tensor = tensor_data_encoded(train_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder)
+        else:
+            input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
 
         accuracy = model.train_(input_tensor, output_tensor, bs, args)
 
@@ -128,17 +150,20 @@ def train(epoch, train_data, model, bs, args):
         #         epoch, batch_idx * bs, N, batch_idx*bs/N*100, accuracy))
 
     if args.leftovers:
-        # TODO : Refactor (low priority, but duplicated code)
         leftover = N - bs*(N//bs)
         if leftover > 0:
             batch_idx = N // bs
-            input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args, leftover=True)
+            if args.autoencoder:
+                input_tensor, output_tensor = tensor_data_encoded(train_data, batch_idx, bs, args, \
+                                                                  user_autoencoder, sub_autoencoder, leftover=True)
+            else:
+                input_tensor, output_tensor = tensor_data(train_data, batch_idx, bs, args)
             accuracy = model.train_(input_tensor, output_tensor, leftover, args)
 
     return
 
 
-def test(epoch, test_data, model, bs, args):
+def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
     model.eval()
 
     test_data = cvt_data_axis(test_data)
@@ -149,11 +174,11 @@ def test(epoch, test_data, model, bs, args):
     accuracy = []
 
     for batch_idx in range(N // bs):
-        input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
+        if args.autoencoder:
+            input_tensor, output_tensor = tensor_data_encoded(test_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder)
+        else:
+            input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
         acc, predPos = model.test_(input_tensor, output_tensor, args)
-
-        # Compare labels (output_tensor) to input_tensor0
-        # fpr, tpr, _ = roc_curve(output_tensor, pred)
 
         accuracy.append(acc)
         allPredProbs.extend(predPos.tolist())
@@ -161,11 +186,14 @@ def test(epoch, test_data, model, bs, args):
     print('\n')
 
     if args.leftovers:
-        # TODO : Refactor (low priority, but duplicated code)
         leftover = N - bs*(N//bs)
         if leftover > 0:
             batch_idx = N // bs
-            input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args, leftover=True)
+            if args.autoencoder:
+                input_tensor, output_tensor = tensor_data_encoded(test_data, batch_idx, bs, args, \
+                                                                  user_autoencoder, sub_autoencoder, leftover=True)
+            else:
+                input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
             acc, predPos = model.test_(input_tensor, output_tensor, args)
 
             accuracy.append(acc)
@@ -177,16 +205,20 @@ def test(epoch, test_data, model, bs, args):
     auc = round(auc, 4)
 
     accuracy = sum(accuracy) / len(accuracy)
+
+    # Print some statistics
     print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
     print('AUC Score: {}'.format(auc))
 
-    return
+    return accuracy, auc
 
 
-def train_autoencoder(epoch, train_data, autoencoder, bs, args):
-    autoencoder.train()
+def train_autoencoder(epoch, train_data, user_autoencoder, sub_autoencoder, bs, args):
+    user_autoencoder.train()
+    sub_autoencoder.train()
 
     train_data = train_data[:, 0]
+    # train_data = train_data[:, 0]
     random.shuffle(train_data)
     train_data = np.array(list(train_data[:][:]), dtype=np.float32)
 
@@ -200,13 +232,21 @@ def train_autoencoder(epoch, train_data, autoencoder, bs, args):
         #     data = data[0]
         #     data = Variable(torch.from_numpy(data)).float()
         #
-        first_embedding, second_embedding, third_embedding, post_embedding = extract_embeddings(input_tensor)
-        embeds = [first_embedding, second_embedding, third_embedding]
+        user_embedding, source_embedding, target_embedding, post_embedding = extract_embeddings(input_tensor)
 
-        for embed in embeds:
-            # Forwards
-            autoencoder.train_(embed, args)
+        loss1 = user_autoencoder.train_(user_embedding, args)
+        loss2 = sub_autoencoder.train_(source_embedding, args)
+        loss3 = sub_autoencoder.train_(target_embedding, args)
+
+        # if batch_idx % args.log_interval == 0:
+        #     print('Autoencoder training Epoch: {}, [{}/{} ({:.0f}%)] '.format(
+        #         epoch, batch_idx * bs, N, batch_idx*bs/N*100))
             # code = autoencoder.encode(embed)
+
+    print("User autoencoder loss:", loss1)
+    print("Source embedding loss:", loss2)
+    print("Target embedding loss:", loss3)
+    print("====================================")
 
         #     if (i+1) % (len(prop_all)//100) == 0:
         #         print('[{}/{} ({:.0f}%)]'.format(i, len(prop_all), i/len(prop_all)*100))
@@ -246,6 +286,35 @@ def extract_embeddings(input_feats):
     return embeddings
 
 
+def get_autoencoders(args, epochs, batchSize, encoderType, train_data):
+    if not args.autoencoder:
+        return (None, None)
+
+    if encoderType == 'simple':
+        user_autoencoder = SimpleAutoEncoder()
+        sub_autoencoder = SimpleAutoEncoder()
+    elif encoderType == 'variational':
+        user_autoencoder = VariationalAutoEncoder()
+        sub_autoencoder = VariationalAutoEncoder()
+    else:
+        raise ValueError("Encoder Type must be: 'simple', 'variational'")
+
+    if os.path.isfile('./user_autoencoder.pth'):
+        user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))
+        sub_autoencoder.load_state_dict(torch.load('./sub_autoencoder.pth'))
+    else:
+        print("~~~ Starting autoencoder training! ~~~")
+        for epoch in range(1, epochs + 1):
+            print("Training autoencoder: epoch {}".format(epoch))
+            train_autoencoder(epoch, train_data, user_autoencoder, sub_autoencoder, batchSize, args)
+
+        print("Saving autoencoders...")
+        torch.save(user_autoencoder.state_dict(), './user_autoencoder_{).pth'.format(encoderType))
+        torch.save(sub_autoencoder.state_dict(), './sub_autoencoder_{}.pth'.format(encoderType))
+
+    return user_autoencoder, sub_autoencoder
+
+
 def main():
     DEFAULT_BS = 64
     TOTAL_FEATURES = 1227
@@ -253,12 +322,13 @@ def main():
     NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
     USE_LEFTOVERS = True
     USE_BCE = False
+    USE_AUTOENCODERS = False
 
     # Change test set size here:
     test_size = 2000
 
     # Change number of epochs here:
-    DEFAULT_EPOCHS = 5
+    DEFAULT_EPOCHS = 3
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
@@ -314,6 +384,8 @@ def main():
                         help='use Binary Cross Entropy loss function')
     parser.add_argument('--leftovers', action='store_true', default=USE_LEFTOVERS,
                         help='train on leftovers after mini-batches')
+    parser.add_argument('--autoencoder', action='store_true', default=USE_AUTOENCODERS,
+                        help='train on leftovers after mini-batches')
     args = parser.parse_args()
 
 
@@ -326,44 +398,73 @@ def main():
     Note that the post embeddings are already of length 64, hence they do not need to be passed through
     the autoencoder.
     """
-    autoEpochs = 2
-    autoencoder = SimpleAutoEncoder()
-    ae_bs = 64
-
-    print("~~~ Starting autoencoder training! ~~~")
-    # # TODO : After training autoencoder, encode all examples
-    for epoch in range(1, autoEpochs + 1):
-        print("Training autoencoder: epoch {}".format(epoch))
-        train_autoencoder(epoch, prop_train, autoencoder, ae_bs, args)
-
-    # Use the autoencoder to encode all the features
-
+    encoderType = 'simple'
+    autoEpochs = 10
+    autoBatchSize = 64
+    user_autoencoder, sub_autoencoder = get_autoencoders(args, autoEpochs, autoBatchSize, encoderType, prop_all)
 
     """Prepare the Relational Network"""
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
-    cuda = args.cuda
+    # cuda = args.cuda
 
     torch.manual_seed(args.seed)
-    if cuda:
+    if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
+    # Relational network model
     model = RN(args)
-
-    bs = args.batch_size
-
     if args.cuda:
         model.cuda()
+
+    bs = args.batch_size
 
     # Count labels in New training set
     unique, counts = np.unique(allY, return_counts=True)
     print("\nNumber of conflict/non-conflict:")
     print(dict(zip(unique, counts)))
+
     print("\nTraining...")
 
-    for epoch in range(1, args.epochs + 1):
-        train(epoch, prop_train, model, bs, args)
-        test(epoch, prop_test, model, bs, args)
+    N_FOLDS = 5
+
+    epochRange = range(1, args.epochs + 1)
+    resultsDf = pd.DataFrame(index=list(epochRange), columns=['Accuracy', 'AUC'])
+    best_total_accuracy = 0.0
+
+    for epoch in epochRange:
+        # Split into training set and validation set
+        kfold = KFold(n_splits = N_FOLDS)
+
+        total_accuracy = 0
+        total_auc = 0
+
+        for train_idx, test_idx in kfold.split(prop_all):
+            prop_train = prop_all[train_idx, :]
+            prop_test = prop_all[test_idx, :]
+            train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
+
+            accuracy, auc = test(epoch, prop_test, model, bs,
+                               args, user_autoencoder, sub_autoencoder)
+            total_accuracy += accuracy
+            total_auc += auc
+
+        # Take the average of each accuracy and AUC
+        avgAccuracy = float(total_accuracy.item())/N_FOLDS
+        avgAuc = round(float(total_auc.item())/N_FOLDS, 4)
+
+        resultsDf['Accuracy'].loc[epoch] = avgAccuracy
+        resultsDf['AUC'].loc[epoch] = avgAuc
+
+        if total_accuracy > best_total_accuracy:
+            model.save_model(epoch, args)
+            best_total_accuracy = total_accuracy
+
+    resultsDf.to_csv('results.csv')
+
+    # MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
+    # model.load_state_dict(torch.load(MODEL_DIR + 'NLL_epoch_01.pth'))
+    # model.load_state_dict(torch.load(MODEL_DIR + 'BCE_epoch_10.pth'))
 
     print("Training complete!")
 
