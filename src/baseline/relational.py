@@ -451,7 +451,7 @@ def main():
 
         # Take the average of each accuracy and AUC
         avgAccuracy = float(total_accuracy.item())/N_FOLDS
-        avgAuc = float(total_auc.item())/N_FOLDS
+        avgAuc = round(float(total_auc.item())/N_FOLDS, 4)
 
         resultsDf['Accuracy'].loc[epoch] = avgAccuracy
         resultsDf['AUC'].loc[epoch] = avgAuc
