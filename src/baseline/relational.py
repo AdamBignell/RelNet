@@ -16,6 +16,27 @@ from sklearn.metrics import roc_auc_score
 
 from sklearn.model_selection import KFold
 
+# Define Consts
+DEFAULT_BS = 64
+TOTAL_FEATURES = 1227
+NUM_HANDCRAFTED = 263
+NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
+USE_LEFTOVERS = True
+USE_BCE = False
+USE_AUTOENCODERS = False
+USE_TESTALL = True
+
+# Change number of epochs and folds here:
+DEFAULT_EPOCHS = 10
+N_FOLDS = 5
+
+# Set the below to whatever your machine uses
+DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
+MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
+DATA_DIR = "/media/dxguo/exFAT/School/conflict_data/prediction/"
+BEST_BCE = "BCE_epoch_100.pth"
+BEST_NLL = "NLL_epoch_97.pth"
+
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
     which = "X"
@@ -66,8 +87,8 @@ def loadNonconflictData(rootDirectory):
 
 def loadFullData(rootDirectory):
     """Loads the complete data set"""
-    full_embeds = np.load(open(rootDirectory + "/detailed_data/full_embeds.npy"))
-    return full_embeds
+    prop_all = np.load(open(rootDirectory + "prop_all.npy", 'rb'))
+    return prop_all
 
 
 def tensor_data(data, i, bs, args, leftover=False):
@@ -171,7 +192,7 @@ def train(epoch, train_data, model, bs, args, user_autoencoder, sub_autoencoder)
     return
 
 
-def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
+def test(epoch, test_data, model, bs, args, user_autoencoder=None, sub_autoencoder=None):
     model.eval()
 
     test_data = cvt_data_axis(test_data)
@@ -217,10 +238,14 @@ def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
     auc = round(auc, 4)
 
     accuracy = sum(accuracy) / len(accuracy)
-    print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
-    print('AUC Score: {}'.format(auc))
-
-    return accuracy
+    if args.test_all:
+        print('Conflict Accuracy: {:.0f}%'.format(accuracy))
+        print('AUC Score: {}'.format(auc))
+    else:
+        print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
+        print('AUC Score: {}'.format(auc))
+    
+    return
 
 
 def train_autoencoder(epoch, train_data, user_autoencoder, sub_autoencoder, bs, args):
@@ -295,54 +320,9 @@ def extract_embeddings(input_feats):
 
     return embeddings
 
-
 def main():
-    DEFAULT_BS = 64
-    TOTAL_FEATURES = 1227
-    NUM_HANDCRAFTED = 263
-    NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
-    USE_LEFTOVERS = True
-    USE_BCE = False
-    USE_AUTOENCODERS = False
-
-    # Change test set size here:
-    test_size = 2000
-
-    # Change number of epochs here:
-    DEFAULT_EPOCHS = 10
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
-
-    # Set the below to whatever your machine uses
-    DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
-    DATA_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
-
-    print("Loading dev data...")
-
-    # New version of the dev data, sorted by label
-    conX, conY, conIDs = loadConflictData(DEV_DIR)
-    print("\n\tConflict X Size \t= ", conX.shape)
-    print("\tConflict Y Size \t= ", conY.shape)
-    print("\tConflict IDs Size \t= ", len(conIDs))
-    print()
-
-    nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
-    print("\tNon-Conflict X Size \t= ", conX.shape)
-    print("\tNon-Conflict Y Size \t= ", conY.shape)
-    print("\tNon-Conflict IDs Size \t= ", len(conIDs))
-
-    allX = np.concatenate((conX, nonX), axis=0)
-    allY = np.concatenate((conY, nonY), axis=0)
-
-    # This is the version of the data with even representation
-    prop_all = []
-    for i in range(len(allX)):
-        prop_all.append((allX[i], allY[i][0]))
-    prop_all = np.array(prop_all)
-
-    np.random.shuffle(prop_all)
-    prop_test = prop_all[0:test_size]
-    prop_train = prop_all[test_size:]
 
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network sort-of-CLVR Example')
@@ -368,8 +348,86 @@ def main():
                         help='train on leftovers after mini-batches')
     parser.add_argument('--autoencoder', action='store_true', default=USE_AUTOENCODERS,
                         help='train on leftovers after mini-batches')
+    parser.add_argument('--test-all', action='store_true', default=USE_TESTALL,
+                        help='train on leftovers after mini-batches')
     args = parser.parse_args()
 
+
+    """Prepare the Relational Network"""
+
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
+    cuda = args.cuda
+
+    torch.manual_seed(args.seed)
+    if cuda:
+        torch.cuda.manual_seed(args.seed)
+
+    model = RN(args)
+
+    bs = args.batch_size
+
+    if args.cuda:
+        model.cuda()
+
+    """Train or Test"""
+    if args.test_all:
+        test_manager(model, bs, args)
+    else:
+        train_manager(model, bs, args)
+
+
+    return
+
+
+def test_manager(model, bs, args):
+
+    print("Loading test data...")
+    prop_all = loadFullData(DATA_DIR)
+    print("\tFull Data Shape \t= ", prop_all.shape)
+
+    print("\nLoading saved state...")
+    if args.BCE:
+        model.load_state_dict(torch.load(os.path.join(MODEL_DIR, BEST_BCE)))
+    else:
+        model.load_state_dict(torch.load(os.path.join(MODEL_DIR, BEST_NLL)))
+
+    print("\nTesting...")
+    test(0, prop_all, model, bs, args)
+
+    print("\nTesting complete!")
+
+    return
+
+
+def train_manager(model, bs, args):
+    # Change test set size here:
+    test_size = 2000
+
+    print("Loading dev data...")
+
+    # New version of the dev data, sorted by label
+    conX, conY, conIDs = loadConflictData(DEV_DIR)
+    print("\n\tConflict X Size \t= ", conX.shape)
+    print("\tConflict Y Size \t= ", conY.shape)
+    print("\tConflict IDs Size \t= ", len(conIDs))
+
+    nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
+    print("\tNon-Conflict X Size \t= ", conX.shape)
+    print("\tNon-Conflict Y Size \t= ", conY.shape)
+    print("\tNon-Conflict IDs Size \t= ", len(conIDs))
+
+    allX = np.concatenate((conX, nonX), axis=0)
+    allY = np.concatenate((conY, nonY), axis=0)
+
+    # This is the version of the data with even representation
+    prop_all = []
+    for i in range(len(allX)):
+        prop_all.append((allX[i], allY[i][0]))
+    prop_all = np.array(prop_all)
+
+    np.random.shuffle(prop_all)
+    prop_test = prop_all[0:test_size]
+    prop_train = prop_all[test_size:]
 
     """ 
     Train the AutoEncoder
@@ -402,32 +460,12 @@ def main():
     else:
         user_autoencoder, sub_autoencoder = None, None
 
-    """Prepare the Relational Network"""
-
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-    cuda = args.cuda
-
-    torch.manual_seed(args.seed)
-    if cuda:
-        torch.cuda.manual_seed(args.seed)
-
-    model = RN(args)
-
-    bs = args.batch_size
-
-    if args.cuda:
-        model.cuda()
-
     # Count labels in New training set
     unique, counts = np.unique(allY, return_counts=True)
     print("\nNumber of conflict/non-conflict:")
     print(dict(zip(unique, counts)))
 
-
     print("\nTraining...")
-
-    N_FOLDS = 5
-    best_total_accuracy = 0
 
     for epoch in range(1, args.epochs + 1):
         # Split into training set and validation set
@@ -437,16 +475,10 @@ def main():
             prop_train = prop_all[train_idx, :]
             prop_test = prop_all[test_idx, :]
             train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
-            total_accuracy += test(epoch, prop_test, model, bs,
+            test(epoch, prop_test, model, bs,
                                args, user_autoencoder, sub_autoencoder)
-        if total_accuracy > best_total_accuracy:
+        if epoch % 5 == 0:
             model.save_model(epoch, args)
-
-    # MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
-    # model.load_state_dict(torch.load(MODEL_DIR + 'NLL_epoch_01.pth'))
-    # model.load_state_dict(torch.load(MODEL_DIR + 'BCE_epoch_10.pth'))
-
-    # test(0, prop_all, model, bs, args, user_autoencoder, sub_autoencoder)
 
     print("Training complete!")
 
