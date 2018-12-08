@@ -24,7 +24,7 @@ NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
 USE_LEFTOVERS = True
 USE_BCE = False
 USE_AUTOENCODERS = False
-USE_TESTALL = True
+USE_TESTALL = False
 
 # Change number of epochs and folds here:
 DEFAULT_EPOCHS = 10
@@ -477,7 +477,7 @@ def train_manager(model, bs, args):
             train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
             test(epoch, prop_test, model, bs,
                                args, user_autoencoder, sub_autoencoder)
-        if epoch % 5 == 0:
+        if epoch % 100 == 0:
             model.save_model(epoch, args)
 
     print("Training complete!")

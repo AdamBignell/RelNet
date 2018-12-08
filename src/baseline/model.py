@@ -92,11 +92,17 @@ class BasicModel(nn.Module):
             pred = output.data.max(1)[1]
             correct = pred.eq(label.data).cpu().sum()
             # predictions are log probabilities, so convert back to actual probs
-            posClassProbs = torch.exp(output)[:, 1].detach().numpy()
+            if args.cuda:
+                posClassProbs = torch.exp(output)[:, 1].cpu().detach().numpy()
+            else:
+                posClassProbs = torch.exp(output)[:, 1].detach().numpy()
         else:
             pred = output.view(output.shape[0]).round()
             correct = pred.eq(label.data.float()).cpu().sum()
-            posClassProbs = output[:, 0].detach().numpy()
+            if args.cuda:
+                posClassProbs = output[:, 0].cpu().detach().numpy()
+            else:
+                posClassProbs = output[:, 0].detach().numpy()
 
         accuracy = correct * 100. / len(label)
 
@@ -318,7 +324,11 @@ class RN(BasicModel):
         # now reshape  (mb*6) x 128 =>
         g_input = g_input.contiguous().view(batch_size*POSSIBLE_PAIRINGS, 2*OBJ_LENGTH)
 
-        x_ = g_input
+        if args.cuda:
+            x_ = g_input.cuda()
+        else:
+            x_ = g_input
+
         x_ = self.g_fc1(x_)
         x_ = F.relu(x_)
         x_ = self.g_fc2(x_)
