@@ -88,7 +88,8 @@ def loadNonconflictData(rootDirectory):
 
 def loadFullData(rootDirectory):
     """Loads the complete data set"""
-    prop_all = np.load(open(rootDirectory + "prop_all.npy", 'rb'))
+    with open(rootDirectory + "prop_all.npy", 'rb') as file:
+        prop_all = np.load(file)
     return prop_all
 
 
@@ -429,25 +430,29 @@ def train_manager(model, bs, args):
 
     print("Loading dev data...")
 
-    # New version of the dev data, sorted by label
-    conX, conY, conIDs = loadConflictData(DEV_DIR)
-    print("\n\tConflict X Size \t= ", conX.shape)
-    print("\tConflict Y Size \t= ", conY.shape)
-    print("\tConflict IDs Size \t= ", len(conIDs))
+    # # New version of the dev data, sorted by label
+    # conX, conY, conIDs = loadConflictData(DEV_DIR)
+    # print("\n\tConflict X Size \t= ", conX.shape)
+    # print("\tConflict Y Size \t= ", conY.shape)
+    # print("\tConflict IDs Size \t= ", len(conIDs))
 
-    nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
-    print("\tNon-Conflict X Size \t= ", conX.shape)
-    print("\tNon-Conflict Y Size \t= ", conY.shape)
-    print("\tNon-Conflict IDs Size \t= ", len(conIDs))
+    # nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
+    # print("\tNon-Conflict X Size \t= ", conX.shape)
+    # print("\tNon-Conflict Y Size \t= ", conY.shape)
+    # print("\tNon-Conflict IDs Size \t= ", len(conIDs))
 
-    allX = np.concatenate((conX, nonX), axis=0)
-    allY = np.concatenate((conY, nonY), axis=0)
+    # allX = np.concatenate((conX, nonX), axis=0)
+    # allY = np.concatenate((conY, nonY), axis=0)
 
-    # This is the version of the data with even representation
-    prop_all = []
-    for i in range(len(allX)):
-        prop_all.append((allX[i], allY[i][0]))
-    prop_all = np.array(prop_all)
+    
+
+    # # This is the version of the data with even representation
+    # prop_all = []
+    # for i in range(len(allX)):
+    #     prop_all.append((allX[i], allY[i][0]))
+    # prop_all = np.array(prop_all)
+
+    prop_all = loadFullData(DATA_DIR)
 
     np.random.shuffle(prop_all)
     prop_test = prop_all[0:test_size]
@@ -477,9 +482,9 @@ def train_manager(model, bs, args):
         torch.cuda.manual_seed(args.seed)
 
     # Count labels in New training set
-    unique, counts = np.unique(allY, return_counts=True)
-    print("\nNumber of conflict/non-conflict:")
-    print(dict(zip(unique, counts)))
+    # unique, counts = np.unique(allY, return_counts=True)
+    # print("\nNumber of conflict/non-conflict:")
+    # print(dict(zip(unique, counts)))
 
     print("\nTraining...")
 
