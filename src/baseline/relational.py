@@ -29,6 +29,7 @@ USE_TESTALL = False
 # Change number of epochs and folds here:
 DEFAULT_EPOCHS = 10
 N_FOLDS = 5
+EPOCHS_PER_SAVE = 100
 
 # Set the below to whatever your machine uses
 DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
@@ -467,7 +468,9 @@ def train_manager(model, bs, args):
 
     print("\nTraining...")
 
-    for epoch in range(1, args.epochs + 1):
+    # for epoch in range(1, args.epochs + 1):
+    epoch = 0
+    while True:
         # Split into training set and validation set
         kfold = KFold(n_splits = N_FOLDS)
         total_accuracy = 0
@@ -477,8 +480,9 @@ def train_manager(model, bs, args):
             train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
             test(epoch, prop_test, model, bs,
                                args, user_autoencoder, sub_autoencoder)
-        if epoch % 100 == 0:
+        if epoch % EPOCHS_PER_SAVE == 0:
             model.save_model(epoch, args)
+        epoch += 1
 
     print("Training complete!")
 
