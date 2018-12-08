@@ -24,7 +24,7 @@ NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
 USE_LEFTOVERS = True
 USE_BCE = False
 USE_AUTOENCODERS = False
-USE_TESTALL = True
+USE_TESTALL = False
 
 # Change number of epochs and folds here:
 DEFAULT_EPOCHS = 10
