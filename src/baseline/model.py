@@ -109,7 +109,7 @@ class BasicModel(nn.Module):
         return accuracy, posClassProbs, pred
 
     def save_model(self, epoch, args):
-        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}.pth'.format('BCE' if args.BCE else 'NLL', epoch))
+        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}_ALL_DATA.pth'.format('BCE' if args.BCE else 'NLL', epoch))
 
 
 
