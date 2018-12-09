@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import random
+import os
 
 
 class FCOutputModel(nn.Module):
@@ -108,8 +109,11 @@ class BasicModel(nn.Module):
 
         return accuracy, posClassProbs, pred
 
-    def save_model(self, epoch, args):
-        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}_ALL_DATA.pth'.format('BCE' if args.BCE else 'NLL', epoch))
+    def save_model(self, epoch, args, MODEL_DIR):
+        torch.save(self.state_dict(), os.path.join(MODEL_DIR, '{}_epoch_{:02d}_{}.pth'.format(
+            'BCE' if args.BCE else 'NLL', 
+            epoch,
+            'ALL' if args.train_all else 'DEV')))
 
 
 

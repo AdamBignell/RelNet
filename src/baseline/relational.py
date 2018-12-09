@@ -21,22 +21,27 @@ DEFAULT_BS = 64
 TOTAL_FEATURES = 1227
 NUM_HANDCRAFTED = 263
 NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
+PERCENT_TEST = 0.2
+PERCENT_TRAIN = 1 - PERCENT_TEST
 USE_LEFTOVERS = True
 USE_BCE = False
 USE_AUTOENCODERS = False
+USE_TEST = False
 USE_TESTALL = False
+USE_TRAINALL = False
 
 # Change number of epochs and folds here:
-DEFAULT_EPOCHS = 10
+DEFAULT_EPOCHS = 1000
 N_FOLDS = 5
-EPOCHS_PER_SAVE = 100
+EPOCHS_PER_SAVE = 50
 
-# Set the below to whatever your machine uses
 DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
+# Set the constants below to whatever your machine uses
 DATA_DIR = "/media/dxguo/exFAT/School/conflict_data/prediction/"
-BEST_BCE = "BCE_epoch_100.pth"
-BEST_NLL = "NLL_epoch_97.pth"
+# DATA_DIR = "/home/dxguo/sfuhome/CMPT419/data/"
+BEST_BCE = "BCE_epoch_00_ALL_DATA.pth"
+BEST_NLL = "NLL_epoch_18200.pth"
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -88,8 +93,10 @@ def loadNonconflictData(rootDirectory):
 
 def loadFullData(rootDirectory):
     """Loads the complete data set"""
-    with open(rootDirectory + "prop_all.npy", 'rb') as file:
-        prop_all = np.load(file)
+    # with open(rootDirectory + "prop_all.npy", 'rb') as file:
+    #     prop_all = np.load(file)
+    # os.remove(rootDirectory + "prop_all.npy")
+    prop_all = np.load(open(rootDirectory + "prop_all.npy", 'rb'))
     return prop_all
 
 
@@ -217,8 +224,6 @@ def test(epoch, test_data, model, bs, args, user_autoencoder=None, sub_autoencod
         accuracy.append(acc)
         allPredProbs.extend(predPos.tolist())
 
-    print('\n')
-
     if args.leftovers:
         # TODO : Refactor (low priority, but duplicated code)
         leftover = N - bs*(N//bs)
@@ -240,12 +245,12 @@ def test(epoch, test_data, model, bs, args, user_autoencoder=None, sub_autoencod
     auc = round(auc, 4)
 
     accuracy = sum(accuracy) / len(accuracy)
-    if args.test_all:
+    if args.test_all or args.test:
         print('Conflict Accuracy: {:.0f}%'.format(accuracy))
         print('AUC Score: {}'.format(auc))
     else:
         print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
-        print('AUC Score: {}'.format(auc))
+        print('AUC Score: {}\n'.format(auc))
     
     return
 
@@ -350,8 +355,12 @@ def main():
                         help='train on leftovers after mini-batches')
     parser.add_argument('--autoencoder', action='store_true', default=USE_AUTOENCODERS,
                         help='train on leftovers after mini-batches')
+    parser.add_argument('--test', action='store_true', default=USE_TEST,
+                        help='test using training data')
     parser.add_argument('--test-all', action='store_true', default=USE_TESTALL,
-                        help='train on leftovers after mini-batches')
+                        help='test using all available data')
+    parser.add_argument('--train-all', action='store_true', default=USE_TRAINALL,
+                        help='train on all available data')
     args = parser.parse_args()
 
 
@@ -372,7 +381,7 @@ def main():
         model.cuda()
 
     """Train or Test"""
-    if args.test_all:
+    if args.test_all or args.test:
         test_manager(model, bs, args)
     else:
         train_manager(model, bs, args)
@@ -383,57 +392,76 @@ def main():
 
 def test_manager(model, bs, args):
 
+    # prop_all_test = prop_all[num_train_data:, :]
+    
     print("Loading test data...")
     prop_all = loadFullData(DATA_DIR)
-    print("\tFull Data Shape \t= ", prop_all.shape)
 
-    print("\nLoading saved state...")
+    print("\nLoading saved state...\n")
     if args.BCE:
         model.load_state_dict(torch.load(os.path.join(MODEL_DIR, BEST_BCE)))
     else:
         model.load_state_dict(torch.load(os.path.join(MODEL_DIR, BEST_NLL)))
 
-    print("\nTesting...")
-    test(0, prop_all, model, bs, args)
+    if args.test:
+        # Use only the last (1 - PERCENT_TRAIN) for training
+        prop_all_len = prop_all.shape[0]
+        num_train_data = int(prop_all_len * PERCENT_TRAIN)
+        prop_test = prop_all[num_train_data:, :]
+        print("Testing model trained with 80% of full data against test data")
+        print("\t(the model file should end in 'ALL')")
+        print("Test Data Shape = {}\n".format(prop_test.shape))
+        test(0, prop_test, model, bs, args)
+    
+    if args.test_all:
+        print("Testing model trained on DEV_DATA against full data")
+        print("\t(the model file should end in 'DEV')")
+        print("Test Data Shape = {}\n".format(prop_all.shape))
+        test(0, prop_all, model, bs, args)
 
-    print("\nTesting complete!")
+    print("\nTesting complete!\n")
 
     return
 
 
 def train_manager(model, bs, args):
-    # Change test set size here:
-    test_size = 2000
 
-    print("Loading dev data...")
+    if args.train_all:
+        print("Loading all data...")
+        prop_all = loadFullData(DATA_DIR)
 
-    # # New version of the dev data, sorted by label
-    # conX, conY, conIDs = loadConflictData(DEV_DIR)
-    # print("\n\tConflict X Size \t= ", conX.shape)
-    # print("\tConflict Y Size \t= ", conY.shape)
-    # print("\tConflict IDs Size \t= ", len(conIDs))
+        # Use only the first PERCENT_TRAIN for training
+        prop_all_len = prop_all.shape[0]
+        num_train_data = int(prop_all_len * PERCENT_TRAIN)
+        prop_all = prop_all[:num_train_data, :]
+    else:
+        print("Loading dev data...")
+        # New version of the dev data, sorted by label
+        conX, conY, conIDs = loadConflictData(DEV_DIR)
+        print("\n\tConflict X Size \t= ", conX.shape)
+        print("\tConflict Y Size \t= ", conY.shape)
+        print("\tConflict IDs Size \t= ", len(conIDs))
 
-    # nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
-    # print("\tNon-Conflict X Size \t= ", conX.shape)
-    # print("\tNon-Conflict Y Size \t= ", conY.shape)
-    # print("\tNon-Conflict IDs Size \t= ", len(conIDs))
+        nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
+        print("\tNon-Conflict X Size \t= ", conX.shape)
+        print("\tNon-Conflict Y Size \t= ", conY.shape)
+        print("\tNon-Conflict IDs Size \t= ", len(conIDs))
 
-    # allX = np.concatenate((conX, nonX), axis=0)
-    # allY = np.concatenate((conY, nonY), axis=0)
+        allX = np.concatenate((conX, nonX), axis=0)
+        allY = np.concatenate((conY, nonY), axis=0)
 
-    
+        # This is the version of the data with even representation
+        prop_all = []
+        for i in range(len(allX)):
+            prop_all.append((allX[i], allY[i][0]))
+        prop_all = np.array(prop_all)
 
-    # # This is the version of the data with even representation
-    # prop_all = []
-    # for i in range(len(allX)):
-    #     prop_all.append((allX[i], allY[i][0]))
-    # prop_all = np.array(prop_all)
-
-    prop_all = loadFullData(DATA_DIR)
+        # Count labels in New training set
+        unique, counts = np.unique(allY, return_counts=True)
+        print("\nNumber of conflict/non-conflict:")
+        print(dict(zip(unique, counts)))
 
     np.random.shuffle(prop_all)
-    prop_test = prop_all[0:test_size]
-    prop_train = prop_all[test_size:]
 
     """ 
     Train the AutoEncoder
@@ -466,19 +494,12 @@ def train_manager(model, bs, args):
     else:
         user_autoencoder, sub_autoencoder = None, None
 
-    # Count labels in New training set
-    # unique, counts = np.unique(allY, return_counts=True)
-    # print("\nNumber of conflict/non-conflict:")
-    # print(dict(zip(unique, counts)))
 
-    print("\nTraining...")
+    print("\nTraining...\n")
 
-    # for epoch in range(1, args.epochs + 1):
-    epoch = 0
-    while True:
+    for epoch in range(0, args.epochs + 1):
         # Split into training set and validation set
         kfold = KFold(n_splits = N_FOLDS)
-        total_accuracy = 0
         for train_idx, test_idx in kfold.split(prop_all):
             prop_train = prop_all[train_idx, :]
             prop_test = prop_all[test_idx, :]
@@ -486,8 +507,7 @@ def train_manager(model, bs, args):
             test(epoch, prop_test, model, bs,
                                args, user_autoencoder, sub_autoencoder)
         if epoch % EPOCHS_PER_SAVE == 0:
-            model.save_model(epoch, args)
-        epoch += 1
+            model.save_model(epoch, args, MODEL_DIR)
 
     print("Training complete!")
 
