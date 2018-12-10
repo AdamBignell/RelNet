@@ -377,8 +377,8 @@ def main():
     if args.autoencoder:
         user_autoencoder = SimpleAutoEncoder()
         sub_autoencoder = SimpleAutoEncoder()
-        user_autoencoder = VariationalAutoEncoder()
-        sub_autoencoder = VariationalAutoEncoder()
+        #user_autoencoder = VariationalAutoEncoder()
+        #sub_autoencoder = VariationalAutoEncoder()
 
         if os.path.isfile('./user_autoencoder.pth'):
             user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))

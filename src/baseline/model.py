@@ -303,7 +303,7 @@ class RN(BasicModel):
         # g_input should be a  6 * mb * 128 tensor (since there are 6 of mb*128 tensors)
         g_input = torch.empty(POSSIBLE_PAIRINGS, batch_size, 2 *
                               OBJ_LENGTH, dtype=torch.float)
-
+                              
         g_input[0, :, :] = first_second
         g_input[1, :, :] = first_third
         g_input[2, :, :] = first_post
