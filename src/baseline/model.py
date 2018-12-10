@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import random
+import os
 
 
 class FCOutputModel(nn.Module):
@@ -43,18 +44,6 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.name = name
 
-    # def naive_guess(self, batch_size, input_feats):
-    #     """Stubbed for subclass to implement"""
-    #     probs = torch.empty(0, 0)
-    #     for i in range(batch_size):
-    #         guess = torch.empty(1, 2)
-    #         probconflict = random.uniform(0, 1)
-    #         probsafe = 1-probconflict
-    #         guess[0, 0] = probsafe
-    #         guess[0, 1] = probconflict
-    #         probs = torch.cat((probs, guess), 0)
-    #     return probs
-
     def train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
@@ -67,8 +56,6 @@ class BasicModel(nn.Module):
         else:
             loss = F.binary_cross_entropy(output.view(batch_size), label.float())
 
-        # with torch.enable_grad(): # Enable gradient descent
-        #     loss.backward()
         loss.backward()
         self.optimizer.step()
 
@@ -101,8 +88,14 @@ class BasicModel(nn.Module):
         accuracy = correct * 100. / len(label)
         return accuracy, posClassProbs
 
-    def save_model(self, epoch):
-        torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+    # def save_model(self, epoch):
+    #     torch.save(self.state_dict(), 'model/epoch_{}_{:02d}.pth'.format(self.name, epoch))
+        # return accuracy, posClassProbs, pred
+
+    def save_model(self, epoch, args):
+        if not os.path.isdir('model'):
+            os.mkdir('model')
+        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}.pth'.format('BCE' if args.BCE else 'NLL', epoch))
 
 
 
