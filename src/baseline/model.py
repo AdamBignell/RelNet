@@ -240,7 +240,7 @@ class SimpleAutoEncoder(nn.Module):
 
 
 class RN(BasicModel):
-    def __init__(self, args):
+    def __init__(self, args, reg_p):
         super(RN, self).__init__(args, 'RN')
         
         """nn.Linear(in_features, out_features, bias=True)
@@ -262,7 +262,7 @@ class RN(BasicModel):
         else:
             self.fcout = FCOutputModelBCE()
 
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=REG_PARAM)
+        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=reg_p)
 
 
     def forward(self, input_feats, args):

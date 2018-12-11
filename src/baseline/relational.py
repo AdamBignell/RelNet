@@ -328,7 +328,7 @@ def main():
     test_size = 2000
 
     # Change number of epochs here:
-    DEFAULT_EPOCHS = 3
+    DEFAULT_EPOCHS = 5
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
 
@@ -412,13 +412,6 @@ def main():
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
-    # Relational network model
-    model = RN(args)
-    if args.cuda:
-        model.cuda()
-
-    bs = args.batch_size
-
     # Count labels in New training set
     unique, counts = np.unique(allY, return_counts=True)
     print("\nNumber of conflict/non-conflict:")
@@ -432,35 +425,52 @@ def main():
     resultsDf = pd.DataFrame(index=list(epochRange), columns=['Accuracy', 'AUC'])
     best_total_accuracy = 0.0
 
-    for epoch in epochRange:
-        # Split into training set and validation set
-        kfold = KFold(n_splits = N_FOLDS)
+    regs = [0.001, 0.0005, 0.0001, 0.00005, 0.00001]
 
-        total_accuracy = 0
-        total_auc = 0
+    true_test = prop_test[:]
 
-        for train_idx, test_idx in kfold.split(prop_all):
-            prop_train = prop_all[train_idx, :]
-            prop_test = prop_all[test_idx, :]
-            train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
+    for reg in regs:
+        print("Using regularization constant = ", reg)
+        # Relational network model
+        model = RN(args, reg)
+        if args.cuda:
+            model.cuda()
 
-            accuracy, auc = test(epoch, prop_test, model, bs,
-                               args, user_autoencoder, sub_autoencoder)
-            total_accuracy += accuracy
-            total_auc += auc
+        bs = args.batch_size
+        for epoch in epochRange:
+            # Split into training set and validation set
+            kfold = KFold(n_splits = N_FOLDS)
 
-        # Take the average of each accuracy and AUC
-        avgAccuracy = float(total_accuracy.item())/N_FOLDS
-        avgAuc = round(float(total_auc.item())/N_FOLDS, 4)
+            total_accuracy = 0
+            total_auc = 0
 
-        resultsDf['Accuracy'].loc[epoch] = avgAccuracy
-        resultsDf['AUC'].loc[epoch] = avgAuc
+            for train_idx, test_idx in kfold.split(prop_all):
+                prop_train = prop_all[train_idx, :]
+                prop_test = prop_all[test_idx, :]
+                train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
 
-        if total_accuracy > best_total_accuracy:
-            model.save_model(epoch, args)
-            best_total_accuracy = total_accuracy
+                accuracy, auc = test(epoch, prop_test, model, bs,
+                                args, user_autoencoder, sub_autoencoder)
+                total_accuracy += accuracy
+                total_auc += auc
 
-    resultsDf.to_csv('results.csv')
+            # Take the average of each accuracy and AUC
+            avgAccuracy = float(total_accuracy.item())/N_FOLDS
+            avgAuc = round(float(total_auc.item())/N_FOLDS, 4)
+
+            resultsDf['Accuracy'].loc[epoch] = avgAccuracy
+            resultsDf['AUC'].loc[epoch] = avgAuc
+
+            if total_accuracy > best_total_accuracy:
+                model.save_model(epoch, args)
+                best_total_accuracy = total_accuracy
+        accuracy, auc = test(epoch, true_test, model, bs,
+        args, user_autoencoder, sub_autoencoder)
+        print("\nFinal Test Accuracy = ", float(accuracy.item()))
+        print("\nFinal Test AUC = ", float(auc.item()))
+
+
+    resultsDf.to_csv('results-adam.csv')
 
     # MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
     # model.load_state_dict(torch.load(MODEL_DIR + 'NLL_epoch_01.pth'))
