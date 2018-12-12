@@ -40,7 +40,7 @@ MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
 # Set the constants below to whatever your machine uses
 DATA_DIR = "/media/dxguo/exFAT/School/conflict_data/prediction/"
 # DATA_DIR = "/home/dxguo/sfuhome/CMPT419/data/"
-BEST_BCE = "BCE_epoch_00_ALL_DATA.pth"
+BEST_BCE = "BCE_epoch_1000_DEV.pth"
 BEST_NLL = "NLL_epoch_18200.pth"
 
 def loadTrainDev(rootDirectory, labels=False):
