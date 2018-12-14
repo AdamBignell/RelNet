@@ -29,7 +29,7 @@ USE_TESTALL = False
 # Change number of epochs and folds here:
 DEFAULT_EPOCHS = 10
 N_FOLDS = 5
-EPOCHS_PER_SAVE = 100
+EPOCHS_PER_SAVE = 1
 
 # Set the below to whatever your machine uses
 DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
@@ -37,6 +37,9 @@ MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
 DATA_DIR = "/media/dxguo/exFAT/School/conflict_data/prediction/"
 BEST_BCE = "BCE_epoch_100.pth"
 BEST_NLL = "NLL_epoch_97.pth"
+
+ADAM_NLL = "NLL_epoch_01_ADAM_DATA.pth" 
+ADAM_BCE = "BCE_epoch_01_ADAM_DATA.pth" 
 
 def loadTrainDev(rootDirectory, labels=False):
     """Load just the training dev data"""
@@ -495,57 +498,39 @@ def train_manager(model, bs, args):
     resultsDf = pd.DataFrame(index=list(epochRange), columns=['Accuracy', 'AUC'])
     best_total_accuracy = 0.0
 
-    regs = [0.001, 0.0005, 0.0001, 0.00005, 0.00001]
+    for epoch in range(1, args.epochs + 1):
+        # Split into training set and validation set
+        kfold = KFold(n_splits = N_FOLDS)
+        total_accuracy = 0
+        total_accuracy = 0
+        total_auc = 0
 
-    true_test = prop_test[:]
+        for train_idx, test_idx in kfold.split(prop_all):
+            prop_train = prop_all[train_idx, :]
+            prop_test = prop_all[test_idx, :]
+            train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
 
-    for reg in regs:
-        print("Using regularization constant = ", reg)
-        # Relational network model
-        model = RN(args, reg)
-        if args.cuda:
-            model.cuda()
+            accuracy, auc = test(epoch, prop_test, model, bs,
+                            args, user_autoencoder, sub_autoencoder)
+            total_accuracy += accuracy
+            total_auc += auc
 
-        bs = args.batch_size
-        for epoch in epochRange:
-            # Split into training set and validation set
-            kfold = KFold(n_splits = N_FOLDS)
+        # Take the average of each accuracy and AUC
+        avgAccuracy = float(total_accuracy.item())/N_FOLDS
+        avgAuc = round(float(total_auc.item())/N_FOLDS, 4)
+        print('Avg Validation Accuracy on epoch {}: Accuracy: {:.0f}%'.format(epoch, avgAccuracy))
+        print('Avg Validation AUC on epoch {}: AUC: {}'.format(epoch, avgAuc))
 
-            total_accuracy = 0
-            total_auc = 0
+        resultsDf['Accuracy'].loc[epoch] = avgAccuracy
+        resultsDf['AUC'].loc[epoch] = avgAuc
 
-            for train_idx, test_idx in kfold.split(prop_all):
-                prop_train = prop_all[train_idx, :]
-                prop_test = prop_all[test_idx, :]
-                train(epoch, prop_train, model, bs, args, user_autoencoder, sub_autoencoder)
-
-                accuracy, auc = test(epoch, prop_test, model, bs,
-                                args, user_autoencoder, sub_autoencoder)
-                total_accuracy += accuracy
-                total_auc += auc
-
-            # Take the average of each accuracy and AUC
-            avgAccuracy = float(total_accuracy.item())/N_FOLDS
-            avgAuc = round(float(total_auc.item())/N_FOLDS, 4)
-
-            resultsDf['Accuracy'].loc[epoch] = avgAccuracy
-            resultsDf['AUC'].loc[epoch] = avgAuc
-
-            if total_accuracy > best_total_accuracy:
-                model.save_model(epoch, args)
-                best_total_accuracy = total_accuracy
-        accuracy, auc = test(epoch, true_test, model, bs,
-        args, user_autoencoder, sub_autoencoder)
-        print("\nFinal Test Accuracy = ", float(accuracy.item()))
-        print("\nFinal Test AUC = ", float(auc.item()))
-
-
-    resultsDf.to_csv('results-adam.csv')
-
-    # MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
-    # model.load_state_dict(torch.load(MODEL_DIR + 'NLL_epoch_01.pth'))
-    # model.load_state_dict(torch.load(MODEL_DIR + 'BCE_epoch_10.pth'))
-
+        if total_accuracy > best_total_accuracy:
+            model.save_model(epoch, args)
+            best_total_accuracy = total_accuracy
+        elif epoch % EPOCHS_PER_SAVE == 0:
+            model.save_model(epoch, args)
+        epoch += 1
+    model.save_model(args.epochs, args)
     print("Training complete!")
 
     return

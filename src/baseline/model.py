@@ -113,7 +113,7 @@ Log-interval:   10
 OBJ_LENGTH = 64
 HIDDEN_LAYER_UNITS = 256
 NUM_FEATURES = 964
-REG_PARAM = 0.00001
+REG_PARAM = 0
 
 
 class VariationalAutoEncoder(nn.Module):
