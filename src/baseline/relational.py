@@ -35,6 +35,7 @@ EPOCHS_PER_SAVE = 1
 DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
 DATA_DIR = "/media/dxguo/exFAT/School/conflict_data/prediction/"
+TEST_DIR = "/home/adam/RelNet/src/baseline/DevData/"
 BEST_BCE = "BCE_epoch_100.pth"
 BEST_NLL = "NLL_epoch_97.pth"
 
@@ -95,6 +96,18 @@ def loadFullData(rootDirectory):
         prop_all = np.load(file)
     return prop_all
 
+def loadTestData(rootDirectory):
+    """Loads the proper test set"""
+    with open(TEST_DIR + "test_X_allstars.npy", 'rb') as file:
+        test_all_x = np.load(file)
+    with open(TEST_DIR + "test_Y_allstars.npy", 'rb') as file2:
+        test_all_y = np.load(file2)
+
+    test_all = []
+    for i in range(len(test_all_x)):
+        test_all.append((test_all_x[i], test_all_y[i]))
+    test_all = np.array(test_all)
+    return test_all
 
 def tensor_data(data, i, bs, args, leftover=False):
     if not args.no_cuda and torch.cuda.is_available():
@@ -163,7 +176,9 @@ def tensor_data_encoded(train_data, batch_idx, bs, args, user_autoencoder, sub_a
 
 def train(epoch, train_data, model, bs, args, user_autoencoder, sub_autoencoder):
     model.train()
+
     random.shuffle(train_data)
+
     train_data = cvt_data_axis(train_data)
     N = len(train_data[0])
 
@@ -181,6 +196,7 @@ def train(epoch, train_data, model, bs, args, user_autoencoder, sub_autoencoder)
         #         epoch, batch_idx * bs, N, batch_idx*bs/N*100, accuracy))
 
     if args.leftovers:
+        # TODO : Refactor (low priority, but duplicated code)
         leftover = N - bs*(N//bs)
         if leftover > 0:
             batch_idx = N // bs
@@ -211,12 +227,13 @@ def test(epoch, test_data, model, bs, args, user_autoencoder=None, sub_autoencod
             input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
         acc, predPos, pred = model.test_(input_tensor, output_tensor, args)
 
+        # Compare labels (output_tensor) to input_tensor0
+        # fpr, tpr, _ = roc_curve(output_tensor, pred)
+
         accuracy.append(acc)
         allPredProbs.extend(predPos.tolist())
-
-    print('\n')
-
     if args.leftovers:
+        # TODO : Refactor (low priority, but duplicated code)
         leftover = N - bs*(N//bs)
         if leftover > 0:
             batch_idx = N // bs
@@ -236,11 +253,13 @@ def test(epoch, test_data, model, bs, args, user_autoencoder=None, sub_autoencod
     auc = round(auc, 4)
 
     accuracy = sum(accuracy) / len(accuracy)
-
-    # Print some statistics
-    print('Test set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
-    print('AUC Score: {}'.format(auc))
-
+    # if args.test_all:
+    #     print('Conflict Accuracy: {:.0f}%'.format(accuracy))
+    #     print('AUC Score: {}'.format(auc))
+    # else:
+    #     print('Validation set on epoch {}: Conflict Accuracy: {:.0f}%'.format(epoch, accuracy))
+    #     print('AUC Score: {}'.format(auc))
+    
     return accuracy, auc
 
 
@@ -316,36 +335,6 @@ def extract_embeddings(input_feats):
 
     return embeddings
 
-
-def get_autoencoders(args, epochs, batchSize, encoderType, train_data):
-    if not args.autoencoder:
-        return (None, None)
-
-    if encoderType == 'simple':
-        user_autoencoder = SimpleAutoEncoder()
-        sub_autoencoder = SimpleAutoEncoder()
-    elif encoderType == 'variational':
-        user_autoencoder = VariationalAutoEncoder()
-        sub_autoencoder = VariationalAutoEncoder()
-    else:
-        raise ValueError("Encoder Type must be: 'simple', 'variational'")
-
-    if os.path.isfile('./user_autoencoder.pth'):
-        user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))
-        sub_autoencoder.load_state_dict(torch.load('./sub_autoencoder.pth'))
-    else:
-        print("~~~ Starting autoencoder training! ~~~")
-        for epoch in range(1, epochs + 1):
-            print("Training autoencoder: epoch {}".format(epoch))
-            train_autoencoder(epoch, train_data, user_autoencoder, sub_autoencoder, batchSize, args)
-
-        print("Saving autoencoders...")
-        torch.save(user_autoencoder.state_dict(), './user_autoencoder_{).pth'.format(encoderType))
-        torch.save(sub_autoencoder.state_dict(), './sub_autoencoder_{}.pth'.format(encoderType))
-
-    return user_autoencoder, sub_autoencoder
-
-
 def main():
 
     print("\n\n\t\t-~*= RUNNING RELNET =*~-\n")
@@ -361,7 +350,7 @@ def main():
     parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
                         help='learning rate (default: 0.0001)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
-                        help='disables CUDA training')
+                            help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
@@ -376,10 +365,9 @@ def main():
                         help='train on leftovers after mini-batches')
     parser.add_argument('--test-all', action='store_true', default=USE_TESTALL,
                         help='train on leftovers after mini-batches')
+    parser.add_argument('--train', dest='train', action='store_true', default=False,)
     args = parser.parse_args()
 
-    # Change number of epochs here:
-    DEFAULT_EPOCHS = 5
 
     """Prepare the Relational Network"""
 
@@ -398,7 +386,7 @@ def main():
         model.cuda()
 
     """Train or Test"""
-    if args.test_all:
+    if not args.train:
         test_manager(model, bs, args)
     else:
         train_manager(model, bs, args)
@@ -406,23 +394,25 @@ def main():
 
     return
 
-
 def test_manager(model, bs, args):
 
     print("Loading test data...")
-    prop_all = loadFullData(DATA_DIR)
-    print("\tFull Data Shape \t= ", prop_all.shape)
+    test_all = loadTestData(DATA_DIR)
+    print("\tTest Data Shape \t= ", test_all.shape)
 
     print("\nLoading saved state...")
     if args.BCE:
-        model.load_state_dict(torch.load(os.path.join(MODEL_DIR, BEST_BCE)))
+        model.load_state_dict(torch.load(os.path.join(MODEL_DIR, ADAM_BCE)))
     else:
-        model.load_state_dict(torch.load(os.path.join(MODEL_DIR, BEST_NLL)))
+        model.load_state_dict(torch.load(os.path.join(MODEL_DIR, ADAM_NLL)))
 
     print("\nTesting...")
-    test(0, prop_all, model, bs, args)
+    accuracy, auc = test(0, test_all, model, bs, args)
 
     print("\nTesting complete!")
+
+    print("\nFinal Test Set Accuracy = ", accuracy.item())
+    print("\nFinal Test Set AUC = ", auc)
 
     return
 
@@ -433,33 +423,31 @@ def train_manager(model, bs, args):
 
     print("Loading dev data...")
 
-    # # New version of the dev data, sorted by label
-    # conX, conY, conIDs = loadConflictData(DEV_DIR)
-    # print("\n\tConflict X Size \t= ", conX.shape)
-    # print("\tConflict Y Size \t= ", conY.shape)
-    # print("\tConflict IDs Size \t= ", len(conIDs))
+    # New version of the dev data, sorted by label
+    conX, conY, conIDs = loadConflictData(DEV_DIR)
+    print("\n\tConflict X Size \t= ", conX.shape)
+    print("\tConflict Y Size \t= ", conY.shape)
+    print("\tConflict IDs Size \t= ", len(conIDs))
 
-    # nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
-    # print("\tNon-Conflict X Size \t= ", conX.shape)
-    # print("\tNon-Conflict Y Size \t= ", conY.shape)
-    # print("\tNon-Conflict IDs Size \t= ", len(conIDs))
+    nonX, nonY, nonIDs = loadNonconflictData(DEV_DIR)
+    print("\tNon-Conflict X Size \t= ", conX.shape)
+    print("\tNon-Conflict Y Size \t= ", conY.shape)
+    print("\tNon-Conflict IDs Size \t= ", len(conIDs))
 
-    # allX = np.concatenate((conX, nonX), axis=0)
-    # allY = np.concatenate((conY, nonY), axis=0)
+    allX = np.concatenate((conX, nonX), axis=0)
+    allY = np.concatenate((conY, nonY), axis=0)
 
-    
+    # This is the version of the data with even representation
+    prop_all = []
+    for i in range(len(allX)):
+        prop_all.append((allX[i], allY[i][0]))
+    prop_all = np.array(prop_all)
 
-    # # This is the version of the data with even representation
-    # prop_all = []
-    # for i in range(len(allX)):
-    #     prop_all.append((allX[i], allY[i][0]))
-    # prop_all = np.array(prop_all)
-
-    prop_all = loadFullData(DATA_DIR)
+    #prop_all = loadFullData(DATA_DIR)
 
     np.random.shuffle(prop_all)
-    prop_test = prop_all[0:test_size]
-    prop_train = prop_all[test_size:]
+    #prop_test = prop_all[0:test_size]
+    #prop_train = prop_all[test_size:]
 
     """ 
     Train the AutoEncoder
@@ -470,33 +458,38 @@ def train_manager(model, bs, args):
     Note that the post embeddings are already of length 64, hence they do not need to be passed through
     the autoencoder.
     """
-    encoderType = 'simple'
-    autoEpochs = 10
-    autoBatchSize = 64
-    user_autoencoder, sub_autoencoder = get_autoencoders(args, autoEpochs, autoBatchSize, encoderType, prop_all)
+    if args.autoencoder:
+        user_autoencoder = SimpleAutoEncoder()
+        sub_autoencoder = SimpleAutoEncoder()
+        user_autoencoder = VariationalAutoEncoder()
+        sub_autoencoder = VariationalAutoEncoder()
 
-    """Prepare the Relational Network"""
+        if os.path.isfile('./user_autoencoder.pth'):
+            user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))
+            sub_autoencoder.load_state_dict(torch.load('./sub_autoencoder.pth'))
+        else:
+            autoEpochs = 10
+            ae_bs = 64
+            print("~~~ Starting autoencoder training! ~~~")
+            for epoch in range(1, autoEpochs + 1):
+                print("Training autoencoder: epoch {}".format(epoch))
+                train_autoencoder(epoch, prop_all, user_autoencoder, sub_autoencoder, ae_bs, args)
 
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-    # cuda = args.cuda
-
-    torch.manual_seed(args.seed)
-    if args.cuda:
-        torch.cuda.manual_seed(args.seed)
+            torch.save(user_autoencoder.state_dict(), './user_autoencoder.pth')
+            torch.save(sub_autoencoder.state_dict(), './sub_autoencoder.pth')
+    else:
+        user_autoencoder, sub_autoencoder = None, None
 
     # Count labels in New training set
     # unique, counts = np.unique(allY, return_counts=True)
     # print("\nNumber of conflict/non-conflict:")
     # print(dict(zip(unique, counts)))
 
-    print("\nTraining...")
-
     N_FOLDS = 5
-    best_total_accuracy = 0
-
     epochRange = range(1, args.epochs + 1)
     resultsDf = pd.DataFrame(index=list(epochRange), columns=['Accuracy', 'AUC'])
     best_total_accuracy = 0.0
+    print("\nTraining...")
 
     for epoch in range(1, args.epochs + 1):
         # Split into training set and validation set

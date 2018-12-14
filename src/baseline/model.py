@@ -5,7 +5,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import random
-import os
 
 
 class FCOutputModel(nn.Module):
@@ -44,6 +43,18 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.name = name
 
+    # def naive_guess(self, batch_size, input_feats):
+    #     """Stubbed for subclass to implement"""
+    #     probs = torch.empty(0, 0)
+    #     for i in range(batch_size):
+    #         guess = torch.empty(1, 2)
+    #         probconflict = random.uniform(0, 1)
+    #         probsafe = 1-probconflict
+    #         guess[0, 0] = probsafe
+    #         guess[0, 1] = probconflict
+    #         probs = torch.cat((probs, guess), 0)
+    #     return probs
+
     def train_(self, input_feats, label, batch_size, args):
         """Naive train using the naive forward method"""
         self.optimizer.zero_grad()
@@ -56,6 +67,8 @@ class BasicModel(nn.Module):
         else:
             loss = F.binary_cross_entropy(output.view(batch_size), label.float())
 
+        # with torch.enable_grad(): # Enable gradient descent
+        #     loss.backward()
         loss.backward()
         self.optimizer.step()
 
@@ -96,7 +109,7 @@ class BasicModel(nn.Module):
         return accuracy, posClassProbs, pred
 
     def save_model(self, epoch, args):
-        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}_ALL_DATA.pth'.format('BCE' if args.BCE else 'NLL', epoch))
+        torch.save(self.state_dict(), 'model/{}_epoch_{:02d}_ADAM_DATA.pth'.format('BCE' if args.BCE else 'NLL', epoch))
 
 
 
@@ -241,7 +254,7 @@ class SimpleAutoEncoder(nn.Module):
 
 
 class RN(BasicModel):
-    def __init__(self, args, reg_p):
+    def __init__(self, args):
         super(RN, self).__init__(args, 'RN')
         
         """nn.Linear(in_features, out_features, bias=True)
@@ -263,7 +276,7 @@ class RN(BasicModel):
         else:
             self.fcout = FCOutputModelBCE()
 
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=reg_p)
+        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, weight_decay=REG_PARAM)
 
 
     def forward(self, input_feats, args):
@@ -297,7 +310,7 @@ class RN(BasicModel):
         # g_input should be a  6 * mb * 128 tensor (since there are 6 of mb*128 tensors)
         g_input = torch.empty(POSSIBLE_PAIRINGS, batch_size, 2 *
                               OBJ_LENGTH, dtype=torch.float)
-                              
+
         g_input[0, :, :] = first_second
         g_input[1, :, :] = first_third
         g_input[2, :, :] = first_post
