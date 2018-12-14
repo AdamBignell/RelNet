@@ -29,6 +29,7 @@ USE_TESTALL = False
 # Change number of epochs and folds here:
 DEFAULT_EPOCHS = 10
 N_FOLDS = 5
+EPOCHS_PER_SAVE = 100
 
 # Set the below to whatever your machine uses
 DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
