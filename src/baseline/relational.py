@@ -64,6 +64,11 @@ def loadNonconflictData(rootDirectory):
     ids = open(rootDirectory + "nonconflictIDs_dev.txt", 'r').readlines()
     return x, y, ids
 
+def loadFullData(rootDirectory):
+    """Loads the complete data set"""
+    full_embeds = np.load(open(rootDirectory + "/detailed_data/full_embeds.npy"))
+    return full_embeds
+
 
 def tensor_data(data, i, bs, args, leftover=False):
     if not args.no_cuda and torch.cuda.is_available():
@@ -178,7 +183,7 @@ def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
             input_tensor, output_tensor = tensor_data_encoded(test_data, batch_idx, bs, args, user_autoencoder, sub_autoencoder)
         else:
             input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
-        acc, predPos = model.test_(input_tensor, output_tensor, args)
+        acc, predPos, pred = model.test_(input_tensor, output_tensor, args)
 
         accuracy.append(acc)
         allPredProbs.extend(predPos.tolist())
@@ -194,7 +199,7 @@ def test(epoch, test_data, model, bs, args, user_autoencoder, sub_autoencoder):
                                                                   user_autoencoder, sub_autoencoder, leftover=True)
             else:
                 input_tensor, output_tensor = tensor_data(test_data, batch_idx, bs, args)
-            acc, predPos = model.test_(input_tensor, output_tensor, args)
+            acc, predPos, pred = model.test_(input_tensor, output_tensor, args)
 
             accuracy.append(acc)
             allPredProbs.extend(predPos.tolist())
@@ -334,6 +339,7 @@ def main():
 
     # Set the below to whatever your machine uses
     DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
+    DATA_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 
     print("Loading dev data...")
 
@@ -420,6 +426,7 @@ def main():
     print("\nTraining...")
 
     N_FOLDS = 5
+    best_total_accuracy = 0
 
     epochRange = range(1, args.epochs + 1)
     resultsDf = pd.DataFrame(index=list(epochRange), columns=['Accuracy', 'AUC'])
