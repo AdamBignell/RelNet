@@ -23,8 +23,9 @@ NUM_HANDCRAFTED = 263
 NUM_FEATURES = TOTAL_FEATURES - NUM_HANDCRAFTED
 USE_LEFTOVERS = True
 USE_BCE = False
-USE_AUTOENCODERS = False
+USE_AUTOENCODERS = True
 USE_TESTALL = False
+USE_TRAIN = False
 
 # Change number of epochs and folds here:
 DEFAULT_EPOCHS = 10
@@ -35,7 +36,8 @@ EPOCHS_PER_SAVE = 1
 DEV_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/DevData/"
 MODEL_DIR = os.path.realpath(__file__[0:-len('relational.py')]) + "/model/"
 DATA_DIR = "/media/dxguo/exFAT/School/conflict_data/prediction/"
-TEST_DIR = "/home/adam/RelNet/src/baseline/DevData/"
+# TEST_DIR = "/home/adam/RelNet/src/baseline/DevData/"
+TEST_DIR = "/home/dxguo/sfuhome/CMPT419/project-repo/RelNet/src/baseline/DevData/"
 BEST_BCE = "BCE_epoch_100.pth"
 BEST_NLL = "NLL_epoch_97.pth"
 
@@ -169,7 +171,7 @@ def tensor_data_encoded(train_data, batch_idx, bs, args, user_autoencoder, sub_a
     final_feats.append(post_embedding.float())
 
     # minibatch * 256 (64x4)
-    input_tensor = torch.cat(final_feats, 1)
+    # input_tensor = torch.cat(final_feats, 1)
 
     return input_tensor, output_tensor
 
@@ -365,7 +367,7 @@ def main():
                         help='train on leftovers after mini-batches')
     parser.add_argument('--test-all', action='store_true', default=USE_TESTALL,
                         help='train on leftovers after mini-batches')
-    parser.add_argument('--train', dest='train', action='store_true', default=False,)
+    parser.add_argument('--train', dest='train', action='store_true', default=USE_TRAIN,)
     args = parser.parse_args()
 
 
@@ -406,8 +408,20 @@ def test_manager(model, bs, args):
     else:
         model.load_state_dict(torch.load(os.path.join(MODEL_DIR, ADAM_NLL)))
 
+    if args.autoencoder:
+        user_autoencoder = VariationalAutoEncoder()
+        sub_autoencoder = VariationalAutoEncoder()
+
+        if args.cuda:
+            user_autoencoder.cuda()
+            sub_autoencoder.cuda()
+
+        if os.path.isfile('./user_autoencoder.pth'):
+            user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))
+            sub_autoencoder.load_state_dict(torch.load('./sub_autoencoder.pth'))
+
     print("\nTesting...")
-    accuracy, auc = test(0, test_all, model, bs, args)
+    accuracy, auc = test(0, test_all, model, bs, args, user_autoencoder, sub_autoencoder)
 
     print("\nTesting complete!")
 
@@ -463,6 +477,10 @@ def train_manager(model, bs, args):
         sub_autoencoder = SimpleAutoEncoder()
         user_autoencoder = VariationalAutoEncoder()
         sub_autoencoder = VariationalAutoEncoder()
+
+        if args.cuda:
+            user_autoencoder.cuda()
+            sub_autoencoder.cuda()
 
         if os.path.isfile('./user_autoencoder.pth'):
             user_autoencoder.load_state_dict(torch.load('./user_autoencoder.pth'))

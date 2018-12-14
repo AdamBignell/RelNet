@@ -150,7 +150,8 @@ class VariationalAutoEncoder(nn.Module):
 
 
     def encode(self, x):
-        h1 = F.relu(self.fc1(x))
+        _x = self.fc1(x)
+        h1 = F.relu(_x)
         return self.fc21(h1), self.fc22(h1)
 
     def reparametrize(self, mu, logvar):
@@ -282,7 +283,7 @@ class RN(BasicModel):
     def forward(self, input_feats, args):
         if args.autoencoder:
             first_embedding, second_embedding, third_embedding, post_embedding = \
-                input_feats[:, :64], input_feats[:, 64:128], input_feats[:, 128:192], input_feats[:, 192:]
+                input_feats[:, :64], input_feats[:, 64:128], input_feats[:, 128:192], input_feats[:, 192:(192+64)]
         else:
             first_embedding, second_embedding, third_embedding, post_embedding = self.extract_embeddings(
                 input_feats)

@@ -5,3 +5,4 @@ __pycache__/
 src/relnet/model/*.pth
 conflict_data/
 .vscode/
+src/baseline/DevData/*_allstars.npy
